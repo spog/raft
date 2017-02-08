@@ -36,6 +36,7 @@ const struct nla_policy raft_nl_domain_policy[RAFT_NLA_DOMAIN_MAX + 1] = {
 	[RAFT_NLA_DOMAIN_HEARTBEAT]	= { .type = NLA_U32 },
 	[RAFT_NLA_DOMAIN_ELECTION]	= { .type = NLA_U32 },
 	[RAFT_NLA_DOMAIN_MAXNODES]	= { .type = NLA_U32 },
+	[RAFT_NLA_DOMAIN_CLUSTERID]	= { .type = NLA_U32 },
 };
 
 /* Properties valid for node */
@@ -43,6 +44,8 @@ const struct nla_policy raft_nl_node_policy[RAFT_NLA_NODE_MAX + 1] = {
 	[RAFT_NLA_NODE_UNSPEC]		= { .type = NLA_UNSPEC },
 	[RAFT_NLA_NODE_ID]		= { .type = NLA_U32 },
 	[RAFT_NLA_NODE_CONTACT]		= { .type = NLA_U32 },
+	[RAFT_NLA_NODE_DOMAINID]	= { .type = NLA_U32 },
+	[RAFT_NLA_NODE_CLUSTERID]	= { .type = NLA_U32 },
 	[RAFT_NLA_NODE_UP]		= { .type = NLA_FLAG }
 };
 
@@ -57,13 +60,89 @@ struct genl_family raft_genl_family = {
 
 int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info)
 {
+	struct nlattr *na;
+	struct sk_buff *rep;
+	int rc;
+	void *msg_head;
+	char * mydata;
+	struct net *net = genl_info_net(info);
+	
 	pr_info("Netlink RAFT cluster add called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	/*for each attribute there is an index in info->attrs which points to a nlattr structure
+	 *in this structure the data is given
+	 */
+	na = info->attrs[RAFT_NLA_CLUSTER];
+	if (na) {
+		mydata = (char *)nla_data(na);
+		if (mydata == NULL)
+			printk("error while receiving data\n");
+		else
+			printk("received: %s\n", mydata);
+		}
+	else
+		printk("no info->attrs %i\n", RAFT_NLA_CLUSTER);
+
+	/* send a message back*/
+	/* allocate some memory, since the size is not yet known use NLMSG_GOODSIZE*/	
+	rep = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (rep == NULL)
+		goto out;
+
+	/* create the message headers */
+	/* arguments of genlmsg_put: 
+	   struct sk_buff *, 
+	   int (sending) pid, 
+	   int sequence number, 
+	   struct genl_family *, 
+	   int flags,
+	   u8 command index (why do we need this?)
+	*/
+	msg_head = genlmsg_put(rep, 0, info->snd_seq+1, &raft_genl_family, 0, RAFT_NL_CLUSTER_ADD);
+	if (msg_head == NULL) {
+		rc = -ENOMEM;
+		goto out;
+	}
+#if 1
+	/* add a RAFT_NLA_CLUSTER attribute (actual value to be sent) */
+	rc = nla_put_string(rep, RAFT_NLA_CLUSTER, "hello world from kernel space");
+	if (rc != 0)
+		goto out;
+#endif
+
+	/* finalize the message */
+	genlmsg_end(rep, msg_head);
+
+	/* send the message back */
+	rc = genlmsg_unicast(net, rep, info->snd_portid);
+	if (rc != 0)
+		goto out;
+	return 0;
+
+out:
+	printk("an error occured in doc_exmpl_echo:\n");
+
 	return 0;
 }
 
 int raft_nl_cluster_del(struct sk_buff *skb, struct genl_info *info)
 {
 	pr_info("Netlink RAFT cluster delete called!\n");
+	return 0;
+}
+
+int raft_nl_cluster_set(struct sk_buff *skb, struct genl_info *info)
+{
+	pr_info("Netlink RAFT cluster set called!\n");
+	return 0;
+}
+
+int raft_nl_cluster_show(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	pr_info("Netlink RAFT cluster show called!\n");
 	return 0;
 }
 
@@ -79,6 +158,18 @@ int raft_nl_domain_del(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+int raft_nl_domain_set(struct sk_buff *skb, struct genl_info *info)
+{
+	pr_info("Netlink RAFT domain set called!\n");
+	return 0;
+}
+
+int raft_nl_domain_show(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	pr_info("Netlink RAFT domain show called!\n");
+	return 0;
+}
+
 int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 {
 	pr_info("Netlink RAFT node add called!\n");
@@ -91,15 +182,38 @@ int raft_nl_node_del(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
+{
+	pr_info("Netlink RAFT node set called!\n");
+	return 0;
+}
+
+int raft_nl_node_show(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	pr_info("Netlink RAFT node show called!\n");
+	return 0;
+}
+
 static const struct genl_ops raft_genl_v2_ops[] = {
 	{
 		.cmd	= RAFT_NL_CLUSTER_ADD,
 		.doit	= raft_nl_cluster_add,
+//		.dumpit	= raft_nl_cluster_add,
 		.policy = raft_nl_policy,
 	},
 	{
 		.cmd	= RAFT_NL_CLUSTER_DEL,
 		.doit	= raft_nl_cluster_del,
+		.policy = raft_nl_policy,
+	},
+	{
+		.cmd	= RAFT_NL_CLUSTER_SET,
+		.doit	= raft_nl_cluster_set,
+		.policy = raft_nl_policy,
+	},
+	{
+		.cmd	= RAFT_NL_CLUSTER_SHOW,
+		.dumpit	= raft_nl_cluster_show,
 		.policy = raft_nl_policy,
 	},
 	{
@@ -113,6 +227,16 @@ static const struct genl_ops raft_genl_v2_ops[] = {
 		.policy = raft_nl_policy,
 	},
 	{
+		.cmd	= RAFT_NL_DOMAIN_SET,
+		.doit	= raft_nl_domain_set,
+		.policy = raft_nl_policy,
+	},
+	{
+		.cmd	= RAFT_NL_DOMAIN_SHOW,
+		.dumpit	= raft_nl_domain_show,
+		.policy = raft_nl_policy,
+	},
+	{
 		.cmd	= RAFT_NL_NODE_ADD,
 		.doit	= raft_nl_node_add,
 		.policy = raft_nl_policy,
@@ -120,6 +244,16 @@ static const struct genl_ops raft_genl_v2_ops[] = {
 	{
 		.cmd	= RAFT_NL_NODE_DEL,
 		.doit	= raft_nl_node_del,
+		.policy = raft_nl_policy,
+	},
+	{
+		.cmd	= RAFT_NL_NODE_SET,
+		.doit	= raft_nl_node_set,
+		.policy = raft_nl_policy,
+	},
+	{
+		.cmd	= RAFT_NL_NODE_SHOW,
+		.dumpit	= raft_nl_node_show,
 		.policy = raft_nl_policy,
 	},
 };
