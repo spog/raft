@@ -63,6 +63,9 @@ int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info)
 	struct nlattr *na;
 	struct sk_buff *rep;
 	int rc;
+	int err;
+	uint32_t cluster_id;
+	struct nlattr *attrs[RAFT_NLA_CLUSTER_MAX + 1];
 	void *msg_head;
 	char * mydata;
 	struct net *net = genl_info_net(info);
@@ -72,19 +75,20 @@ int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info)
 	if (info == NULL)
 		goto out;
 
-	/*for each attribute there is an index in info->attrs which points to a nlattr structure
-	 *in this structure the data is given
-	 */
-	na = info->attrs[RAFT_NLA_CLUSTER];
-	if (na) {
-		mydata = (char *)nla_data(na);
-		if (mydata == NULL)
-			printk("error while receiving data\n");
-		else
-			printk("received: %s\n", mydata);
-		}
-	else
-		printk("no info->attrs %i\n", RAFT_NLA_CLUSTER);
+	if (!info->attrs[RAFT_NLA_CLUSTER])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_CLUSTER_MAX,
+				info->attrs[RAFT_NLA_CLUSTER],
+				raft_nl_cluster_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_CLUSTER_ID])
+		return -EINVAL;
+
+	cluster_id = nla_get_u32(attrs[RAFT_NLA_CLUSTER_ID]);
+	printk("Cluster ID %u\n", cluster_id);
 
 	/* send a message back*/
 	/* allocate some memory, since the size is not yet known use NLMSG_GOODSIZE*/	
@@ -123,20 +127,73 @@ int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 
 out:
-	printk("an error occured in doc_exmpl_echo:\n");
-
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 
 int raft_nl_cluster_del(struct sk_buff *skb, struct genl_info *info)
 {
+	int err;
+	uint32_t cluster_id;
+	struct nlattr *attrs[RAFT_NLA_CLUSTER_MAX + 1];
+
 	pr_info("Netlink RAFT cluster delete called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	if (!info->attrs[RAFT_NLA_CLUSTER])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_CLUSTER_MAX,
+				info->attrs[RAFT_NLA_CLUSTER],
+				raft_nl_cluster_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_CLUSTER_ID])
+		return -EINVAL;
+
+	cluster_id = nla_get_u32(attrs[RAFT_NLA_CLUSTER_ID]);
+	printk("Cluster ID %u\n", cluster_id);
+
+	return 0;
+
+out:
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 
 int raft_nl_cluster_set(struct sk_buff *skb, struct genl_info *info)
 {
+	int err;
+	uint32_t cluster_id;
+	struct nlattr *attrs[RAFT_NLA_CLUSTER_MAX + 1];
+
 	pr_info("Netlink RAFT cluster set called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	if (!info->attrs[RAFT_NLA_CLUSTER])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_CLUSTER_MAX,
+				info->attrs[RAFT_NLA_CLUSTER],
+				raft_nl_cluster_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_CLUSTER_ID])
+		return -EINVAL;
+
+	cluster_id = nla_get_u32(attrs[RAFT_NLA_CLUSTER_ID]);
+	printk("Cluster ID %u\n", cluster_id);
+
+	return 0;
+
+out:
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 
@@ -148,19 +205,184 @@ int raft_nl_cluster_show(struct sk_buff *skb, struct netlink_callback *cb)
 
 int raft_nl_domain_add(struct sk_buff *skb, struct genl_info *info)
 {
+	int err;
+	uint32_t domain_id;
+	uint32_t heartbeat;
+	uint32_t election;
+	uint32_t maxnodes;
+	uint32_t clusterid;
+	struct nlattr *attrs[RAFT_NLA_DOMAIN_MAX + 1];
+
 	pr_info("Netlink RAFT domain add called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	if (!info->attrs[RAFT_NLA_DOMAIN])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_DOMAIN_MAX,
+				info->attrs[RAFT_NLA_DOMAIN],
+				raft_nl_domain_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_DOMAIN_ID])
+		return -EINVAL;
+
+	domain_id = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ID]);
+	printk("Domain ID %u\n", domain_id);
+
+	if (!attrs[RAFT_NLA_DOMAIN_HEARTBEAT])
+		heartbeat = 200;
+	else
+		heartbeat = nla_get_u32(attrs[RAFT_NLA_DOMAIN_HEARTBEAT]);
+	printk("Heartbeat %u\n", heartbeat);
+
+	if (!attrs[RAFT_NLA_DOMAIN_ELECTION])
+		election = 300;
+	else
+		election = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ELECTION]);
+	printk("Election %u\n", election);
+
+	if (!attrs[RAFT_NLA_DOMAIN_MAXNODES])
+		maxnodes = 0;
+	else
+		maxnodes = nla_get_u32(attrs[RAFT_NLA_DOMAIN_MAXNODES]);
+	printk("Maxnodes %u\n", maxnodes);
+
+	if (!attrs[RAFT_NLA_DOMAIN_CLUSTERID])
+		return -EINVAL;
+
+	clusterid = nla_get_u32(attrs[RAFT_NLA_DOMAIN_CLUSTERID]);
+	printk("Cluster ID %u\n", clusterid);
+
+	return 0;
+
+out:
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 
 int raft_nl_domain_del(struct sk_buff *skb, struct genl_info *info)
 {
+	int err;
+	uint32_t domain_id;
+	uint32_t heartbeat;
+	uint32_t election;
+	uint32_t maxnodes;
+	uint32_t clusterid;
+	struct nlattr *attrs[RAFT_NLA_DOMAIN_MAX + 1];
+
 	pr_info("Netlink RAFT domain delete called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	if (!info->attrs[RAFT_NLA_DOMAIN])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_DOMAIN_MAX,
+				info->attrs[RAFT_NLA_DOMAIN],
+				raft_nl_domain_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_DOMAIN_ID])
+		return -EINVAL;
+
+	domain_id = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ID]);
+	printk("Domain ID %u\n", domain_id);
+
+	if (!attrs[RAFT_NLA_DOMAIN_HEARTBEAT])
+		heartbeat = 200;
+	else
+		heartbeat = nla_get_u32(attrs[RAFT_NLA_DOMAIN_HEARTBEAT]);
+	printk("Heartbeat %u\n", heartbeat);
+
+	if (!attrs[RAFT_NLA_DOMAIN_ELECTION])
+		election = 300;
+	else
+		election = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ELECTION]);
+	printk("Election %u\n", election);
+
+	if (!attrs[RAFT_NLA_DOMAIN_MAXNODES])
+		maxnodes = 0;
+	else
+		maxnodes = nla_get_u32(attrs[RAFT_NLA_DOMAIN_MAXNODES]);
+	printk("Maxnodes %u\n", maxnodes);
+
+	if (!attrs[RAFT_NLA_DOMAIN_CLUSTERID])
+		return -EINVAL;
+
+	clusterid = nla_get_u32(attrs[RAFT_NLA_DOMAIN_CLUSTERID]);
+	printk("Cluster ID %u\n", clusterid);
+
+	return 0;
+
+out:
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 
 int raft_nl_domain_set(struct sk_buff *skb, struct genl_info *info)
 {
+	int err;
+	uint32_t domain_id;
+	uint32_t heartbeat;
+	uint32_t election;
+	uint32_t maxnodes;
+	uint32_t clusterid;
+	struct nlattr *attrs[RAFT_NLA_DOMAIN_MAX + 1];
+
 	pr_info("Netlink RAFT domain set called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	if (!info->attrs[RAFT_NLA_DOMAIN])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_DOMAIN_MAX,
+				info->attrs[RAFT_NLA_DOMAIN],
+				raft_nl_domain_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_DOMAIN_ID])
+		return -EINVAL;
+
+	domain_id = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ID]);
+	printk("Domain ID %u\n", domain_id);
+
+	if (!attrs[RAFT_NLA_DOMAIN_HEARTBEAT])
+		heartbeat = 200;
+	else
+		heartbeat = nla_get_u32(attrs[RAFT_NLA_DOMAIN_HEARTBEAT]);
+	printk("Heartbeat %u\n", heartbeat);
+
+	if (!attrs[RAFT_NLA_DOMAIN_ELECTION])
+		election = 300;
+	else
+		election = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ELECTION]);
+	printk("Election %u\n", election);
+
+	if (!attrs[RAFT_NLA_DOMAIN_MAXNODES])
+		maxnodes = 0;
+	else
+		maxnodes = nla_get_u32(attrs[RAFT_NLA_DOMAIN_MAXNODES]);
+	printk("Maxnodes %u\n", maxnodes);
+
+	if (!attrs[RAFT_NLA_DOMAIN_CLUSTERID])
+		return -EINVAL;
+
+	clusterid = nla_get_u32(attrs[RAFT_NLA_DOMAIN_CLUSTERID]);
+	printk("Cluster ID %u\n", clusterid);
+
+	return 0;
+
+out:
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 
