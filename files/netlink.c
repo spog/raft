@@ -394,19 +394,163 @@ int raft_nl_domain_show(struct sk_buff *skb, struct netlink_callback *cb)
 
 int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 {
+	int err;
+	uint32_t node_id;
+	uint32_t contact;
+	uint32_t domainid;
+	uint32_t clusterid;
+	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
+
 	pr_info("Netlink RAFT node add called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	if (!info->attrs[RAFT_NLA_NODE])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_NODE_MAX,
+				info->attrs[RAFT_NLA_NODE],
+				raft_nl_node_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_NODE_ID])
+		return -EINVAL;
+
+	node_id = nla_get_u32(attrs[RAFT_NLA_NODE_ID]);
+	printk("Node ID %u\n", node_id);
+
+	if (!attrs[RAFT_NLA_NODE_CONTACT])
+		contact = 200;
+	else
+		contact = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
+	printk("Contact %u\n", contact);
+
+	if (!attrs[RAFT_NLA_NODE_DOMAINID])
+		return -EINVAL;
+
+	domainid = nla_get_u32(attrs[RAFT_NLA_NODE_DOMAINID]);
+	printk("Domain ID %u\n", domainid);
+
+	if (!attrs[RAFT_NLA_NODE_CLUSTERID])
+		return -EINVAL;
+
+	clusterid = nla_get_u32(attrs[RAFT_NLA_NODE_CLUSTERID]);
+	printk("Cluster ID %u\n", clusterid);
+
+	return 0;
+
+out:
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 
 int raft_nl_node_del(struct sk_buff *skb, struct genl_info *info)
 {
+	int err;
+	uint32_t node_id;
+	uint32_t contact;
+	uint32_t domainid;
+	uint32_t clusterid;
+	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
+
 	pr_info("Netlink RAFT node delete called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	if (!info->attrs[RAFT_NLA_NODE])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_NODE_MAX,
+				info->attrs[RAFT_NLA_NODE],
+				raft_nl_node_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_NODE_ID])
+		return -EINVAL;
+
+	node_id = nla_get_u32(attrs[RAFT_NLA_NODE_ID]);
+	printk("Node ID %u\n", node_id);
+
+	if (!attrs[RAFT_NLA_NODE_CONTACT])
+		contact = 200;
+	else
+		contact = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
+	printk("Contact %u\n", contact);
+
+	if (!attrs[RAFT_NLA_NODE_DOMAINID])
+		return -EINVAL;
+
+	domainid = nla_get_u32(attrs[RAFT_NLA_NODE_DOMAINID]);
+	printk("Domain ID %u\n", domainid);
+
+	if (!attrs[RAFT_NLA_NODE_CLUSTERID])
+		return -EINVAL;
+
+	clusterid = nla_get_u32(attrs[RAFT_NLA_NODE_CLUSTERID]);
+	printk("Cluster ID %u\n", clusterid);
+
+	return 0;
+
+out:
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 
 int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
 {
+	int err;
+	uint32_t node_id;
+	uint32_t contact;
+	uint32_t domainid;
+	uint32_t clusterid;
+	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
+
 	pr_info("Netlink RAFT node set called!\n");
+
+	if (info == NULL)
+		goto out;
+
+	if (!info->attrs[RAFT_NLA_NODE])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, RAFT_NLA_NODE_MAX,
+				info->attrs[RAFT_NLA_NODE],
+				raft_nl_node_policy);
+	if (err)
+		return err;
+
+	if (!attrs[RAFT_NLA_NODE_ID])
+		return -EINVAL;
+
+	node_id = nla_get_u32(attrs[RAFT_NLA_NODE_ID]);
+	printk("Node ID %u\n", node_id);
+
+	if (!attrs[RAFT_NLA_NODE_CONTACT])
+		contact = 200;
+	else
+		contact = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
+	printk("Contact %u\n", contact);
+
+	if (!attrs[RAFT_NLA_NODE_DOMAINID])
+		return -EINVAL;
+
+	domainid = nla_get_u32(attrs[RAFT_NLA_NODE_DOMAINID]);
+	printk("Domain ID %u\n", domainid);
+
+	if (!attrs[RAFT_NLA_NODE_CLUSTERID])
+		return -EINVAL;
+
+	clusterid = nla_get_u32(attrs[RAFT_NLA_NODE_CLUSTERID]);
+	printk("Cluster ID %u\n", clusterid);
+
+	return 0;
+
+out:
+	printk("Error parsing attributes!\n");
 	return 0;
 }
 

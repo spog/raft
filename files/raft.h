@@ -40,6 +40,30 @@
 extern struct proto raft_prot;
 extern int raft_net_id __read_mostly;
 
+struct raft_node {
+	struct list_head list;
+	uint32_t node_id;
+	uint32_t contact;
+	uint32_t domainid;
+	uint32_t clusterid;
+};
+
+struct raft_domain {
+	struct list_head list;
+	struct raft_node *nodes;
+	uint32_t domain_id;
+	uint32_t heartbeat;
+	uint32_t election;
+	uint32_t maxnodes;
+	uint32_t clusterid;
+};
+
+struct raft_cluster {
+	struct list_head list;
+	struct raft_domain *domains;
+	uint32_t cluster_id;
+};
+
 struct raft_net {
 	/* This is the global local address list.
 	 * We actively maintain this complete list of addresses on
