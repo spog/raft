@@ -274,7 +274,10 @@ int raft_net_id __read_mostly;
 
 static int __net_init raft_init_net(struct net *net)
 {
-	struct raft_net *rn = net_generic(net, raft_net_id);
+	struct raft_net *rn = raft_net(net);
+
+	printk("raft_init_net: rn = %p\n", (void *)rn);
+	rn->raft_config = NULL;
 
 	return 0;
 }

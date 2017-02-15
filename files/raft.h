@@ -65,6 +65,10 @@ struct raft_cluster {
 };
 
 struct raft_net {
+#ifdef CONFIG_PROC_FS
+        struct proc_dir_entry *proc_net_raft;
+#endif
+
 	/* This is the global local address list.
 	 * We actively maintain this complete list of addresses on
 	 * the system by catching address add/delete events.
@@ -81,6 +85,9 @@ struct raft_net {
 
 	/* Lock that protects the local_addr_list writers */
 	spinlock_t local_addr_lock;
+
+	/* Access to the raft configuration data */
+	struct raft_cluster *raft_config;
 };
 
 static inline struct raft_net *raft_net(struct net *net)

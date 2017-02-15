@@ -32,6 +32,7 @@
 #include "raft.h"
 
 #ifdef CONFIG_PROC_FS
+#if 0
 static struct sock *raft_get_first(struct seq_file *seq, int start)
 {
 	struct sock *sk;
@@ -133,30 +134,112 @@ int raft_seq_open(struct inode *inode, struct file *file)
 	return err;
 }
 //EXPORT_SYMBOL(raft_seq_open);
+#endif
 
 /* ------------------------------------------------------------------------ */
-int raft_proc_register(struct net *net, struct raft_seq_afinfo *afinfo)
+static void *raft_config_seq_start(struct seq_file *seq, loff_t *pos)
+{
+#if 0
+	if (*pos < 0)
+		*pos = 0;
+
+	return (void *)pos;
+#else
+	return NULL;
+#endif
+}
+
+static void raft_config_seq_stop(struct seq_file *seq, void *v)
+{
+}
+
+
+static void *raft_config_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+{
+#if 0
+	return pos;
+#else
+	return NULL;
+#endif
+}
+
+/* Display raft configuration (/proc/net/raft/config). */
+static int raft_config_seq_show(struct seq_file *seq, void *v)
+{
+	seq_printf(seq, "raft_config_seq_show: rnet_config = %p\n", seq->private);
+
+	if (v == SEQ_START_TOKEN) {
+		return 0;
+	}
+
+	return 0;
+}
+
+#if 0
+static const struct seq_operations raft_config_sops = {
+	.start = raft_config_seq_start,
+	.next  = raft_config_seq_next,
+	.stop  = raft_config_seq_stop,
+	.show  = raft_config_seq_show,
+};
+#endif
+
+static struct raft_net *rnet_config;
+
+static int raft_config_seq_open(struct inode *inode, struct file *file)
+{
+	struct seq_file *seq;
+	int ret = -EINVAL;
+
+#if 0
+	ret = seq_open_net(inode, file, &raft_config_sops,
+			    sizeof(struct seq_net_private));
+#else
+	ret = single_open(file, raft_config_seq_show, inode);
+#endif
+	if (ret)
+		goto err;
+
+	seq = file->private_data;
+	seq->private = rnet_config;
+
+	return 0;
+err:
+	return ret;
+}
+
+static const struct file_operations raft_config_seq_fops = {
+	.open = raft_config_seq_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = seq_release_net,
+};
+
+/* Cleanup the proc fs entry for 'remaddr' object. */
+void raft_config_proc_exit(struct net *net)
+{
+	remove_proc_entry("config", raft_net(net)->proc_net_raft);
+}
+
+int __net_init raft_config_proc_init(struct net *net)
 {
 	struct proc_dir_entry *p;
-	int rc = 0;
 
-	afinfo->seq_ops.start = raft_seq_start;
-	afinfo->seq_ops.next = raft_seq_next;
-	afinfo->seq_ops.stop = raft_seq_stop;
-
-	p = proc_create_data(afinfo->name, S_IRUGO, net->proc_net,
-			     afinfo->seq_fops, afinfo);
+	p = proc_create("config", S_IRUGO, raft_net(net)->proc_net_raft,
+			&raft_config_seq_fops);
 	if (!p)
-		rc = -ENOMEM;
-	return rc;
+		return -ENOMEM;
+	return 0;
 }
-//EXPORT_SYMBOL(raft_proc_register);
+//EXPORT_SYMBOL(raft_config_proc_init);
 
+#if 0
 void raft_proc_unregister(struct net *net, struct raft_seq_afinfo *afinfo)
 {
 	remove_proc_entry(afinfo->name, net->proc_net);
 }
 //EXPORT_SYMBOL(raft_proc_unregister);
+#endif
 
 /* ------------------------------------------------------------------------ */
 static void raft_format_sock(struct sock *sp, struct seq_file *f,
@@ -219,12 +302,34 @@ static struct raft_seq_afinfo raft_seq_afinfo = {
 
 static int __net_init raft_proc_init_net(struct net *net)
 {
-	return raft_proc_register(net, &raft_seq_afinfo);
+	struct raft_net *rnet = raft_net(net);
+
+	if (!rnet)
+		goto error;
+
+	rnet_config = rnet;
+	printk("raft_proc_init_net: rnet_config = %p\n", (void *)rnet_config);
+	rnet->proc_net_raft = proc_net_mkdir(net, "raft", net->proc_net);
+	if (!rnet->proc_net_raft)
+		goto out_proc_net_raft;
+
+	if (raft_config_proc_init(net))
+		goto out_config_proc_init;
+
+	return 0;
+
+out_config_proc_init:
+	remove_proc_entry("raft", net->proc_net);
+	rnet->proc_net_raft = NULL;
+out_proc_net_raft:
+	return -ENOMEM;
+error:
+	return -EINVAL;
 }
 
 static void __net_exit raft_proc_exit_net(struct net *net)
 {
-	raft_proc_unregister(net, &raft_seq_afinfo);
+	raft_config_proc_exit(net);
 }
 
 static struct pernet_operations raft_net_ops = {
