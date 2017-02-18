@@ -29,7 +29,6 @@
 #include <net/route.h>
 #include <net/addrconf.h>
 #include <net/inet_common.h>
-#include <net/genetlink.h>
 
 #include "raft.h"
 
@@ -68,7 +67,7 @@ static int raft_config_cluster_add(struct raft_net *rnet, uint32_t cluster_id, s
 	(*new)->cluster_id = cluster_id;
 	printk("New Cluster ID %u\n", (*new)->cluster_id);
 
-	if (cluster == &rnet->clusters) {
+	if ((struct list_head *)cluster == &rnet->clusters) {
 		printk("Beginning: New Cluster ID %u\n", (*new)->cluster_id);
 		list_add(&(*new)->cluster_list, &rnet->clusters);
 	} else if (cluster->cluster_id > cluster_id) {
@@ -87,7 +86,6 @@ err_nomem:
 
 int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info)
 {
-	struct nlattr *na;
 	struct sk_buff *rep;
 	int rc;
 	int err;
@@ -175,7 +173,7 @@ static int raft_config_cluster_del(struct raft_net *rnet, uint32_t cluster_id)
 	}
 	printk("Cluster list after search: cluster=%p\n", (void *)cluster);
 
-	if (cluster == &rnet->clusters) /*cluster not found*/
+	if ((struct list_head *)cluster == &rnet->clusters) /*cluster not found*/
 		return -EEXIST;
 
 	if (!list_empty(&cluster->domains))
@@ -283,7 +281,7 @@ static int raft_config_domain_add(struct raft_net *rnet, uint32_t cluster_id, ui
 	}
 	printk("Cluster list after search: cluster=%p\n", (void *)cluster);
 
-	if (cluster == &rnet->clusters) /*cluster not found*/
+	if ((struct list_head *)cluster == &rnet->clusters) /*cluster not found*/
 		return -EEXIST;
 
 	printk("Domain list before search: &cluster->domains=%p\n", (void *)&cluster->domains);
@@ -310,7 +308,7 @@ static int raft_config_domain_add(struct raft_net *rnet, uint32_t cluster_id, ui
 	(*new)->domain_id = domain_id;
 	printk("New Domain ID %u\n", (*new)->domain_id);
 
-	if (domain == &cluster->domains) {
+	if ((struct list_head *)domain == &cluster->domains) {
 		printk("Beginning: New Domain ID %u\n", (*new)->domain_id);
 		list_add(&(*new)->domain_list, &cluster->domains);
 	} else if (domain->domain_id > domain_id) {
@@ -393,13 +391,49 @@ out:
 	return 0;
 }
 
+static int raft_config_domain_del(struct raft_net *rnet, uint32_t cluster_id, uint32_t domain_id)
+{
+	struct raft_cluster *cluster = NULL;
+	struct raft_cluster *c_safe;
+	struct raft_domain *domain = NULL;
+	struct raft_domain *d_safe;
+
+	printk("Cluster list before search: &rnet->clusters=%p\n", (void *)&rnet->clusters);
+	list_for_each_entry_safe(cluster, c_safe, &rnet->clusters, cluster_list) {
+		printk("Cluster list in search: cluster=%p\n", (void *)cluster);
+		if (cluster->cluster_id == cluster_id)
+			break;
+	}
+	printk("Cluster list after search: cluster=%p\n", (void *)cluster);
+
+	if ((struct list_head *)cluster == &rnet->clusters) /*cluster not found*/
+		return -EEXIST;
+
+	printk("Domain list before search: &cluster->domains=%p\n", (void *)&cluster->domains);
+	list_for_each_entry_safe(domain, d_safe, &cluster->domains, domain_list) {
+		printk("Domain list in search: domain=%p\n", (void *)domain);
+		if (domain->domain_id == domain_id)
+			break;
+	}
+	printk("Domain list after search: domain=%p\n", (void *)domain);
+
+	if ((struct list_head *)domain == &cluster->domains) /*domain not found*/
+		return -EEXIST;
+
+	if (!list_empty(&domain->nodes))
+		return -EEXIST;
+
+	list_del(&domain->domain_list);
+
+	kfree(domain);
+
+	return 0;
+}
+
 int raft_nl_domain_del(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
 	uint32_t domain_id;
-	uint32_t heartbeat;
-	uint32_t election;
-	uint32_t maxnodes;
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_DOMAIN_MAX + 1];
 
@@ -423,29 +457,15 @@ int raft_nl_domain_del(struct sk_buff *skb, struct genl_info *info)
 	domain_id = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ID]);
 	printk("Domain ID %u\n", domain_id);
 
-	if (!attrs[RAFT_NLA_DOMAIN_HEARTBEAT])
-		heartbeat = 200;
-	else
-		heartbeat = nla_get_u32(attrs[RAFT_NLA_DOMAIN_HEARTBEAT]);
-	printk("Heartbeat %u\n", heartbeat);
-
-	if (!attrs[RAFT_NLA_DOMAIN_ELECTION])
-		election = 300;
-	else
-		election = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ELECTION]);
-	printk("Election %u\n", election);
-
-	if (!attrs[RAFT_NLA_DOMAIN_MAXNODES])
-		maxnodes = 0;
-	else
-		maxnodes = nla_get_u32(attrs[RAFT_NLA_DOMAIN_MAXNODES]);
-	printk("Maxnodes %u\n", maxnodes);
-
 	if (!attrs[RAFT_NLA_DOMAIN_CLUSTERID])
 		return -EINVAL;
 
 	clusterid = nla_get_u32(attrs[RAFT_NLA_DOMAIN_CLUSTERID]);
 	printk("Cluster ID %u\n", clusterid);
+
+	err = raft_config_domain_del(rnet_static_ptr, clusterid, domain_id);
+	if (err)
+		return err;
 
 	return 0;
 
@@ -836,8 +856,10 @@ static int raft_config_seq_show(struct seq_file *seq, void *v)
 
 		seq_printf(seq, "Cluster: ID %u\n", cluster->cluster_id);
 		list_for_each_entry_safe(domain, d_safe, &cluster->domains, domain_list) {
+#if 0
 			struct raft_node *node;
 			struct raft_node *n_safe;
+#endif
 
 			seq_printf(seq, "\tDomain: ID %u\n", domain->domain_id);
 			seq_printf(seq, "\t\tHeartBeat %u\n", domain->heartbeat);
@@ -893,7 +915,8 @@ static const struct file_operations raft_config_seq_fops = {
 	.open = raft_config_seq_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
-	.release = seq_release_net,
+//	.release = seq_release_net,
+	.release = single_release,
 };
 
 /* Cleanup the proc fs entry for 'remaddr' object. */
@@ -960,8 +983,6 @@ int raft_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static struct raft_table raft_table __read_mostly;
-
 static const struct file_operations raft_afinfo_seq_fops = {
 	.owner    = THIS_MODULE,
 	.open     = raft_seq_open,
@@ -971,6 +992,9 @@ static const struct file_operations raft_afinfo_seq_fops = {
 };
 
 /* ------------------------------------------------------------------------ */
+#if 0
+static struct raft_table raft_table __read_mostly;
+
 static struct raft_seq_afinfo raft_seq_afinfo = {
 	.name		= "raft",
 	.family		= AF_INET,
@@ -980,6 +1004,7 @@ static struct raft_seq_afinfo raft_seq_afinfo = {
 		.show		= raft_seq_show,
 	},
 };
+#endif
 
 static int __net_init raft_proc_init_net(struct net *net)
 {

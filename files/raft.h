@@ -27,6 +27,7 @@
 #include <linux/workqueue.h>	/* We need tq_struct.	 */
 #include <net/ip.h>		/* For inet_skb_parm */
 #include <net/netns/generic.h>
+#include <net/genetlink.h>
 
 #include "structs.h"		/* We need raft* header structs.  */
 #include "netlink.h"

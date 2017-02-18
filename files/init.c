@@ -36,7 +36,7 @@
  */
 int raft_rcv(struct sk_buff *skb)
 {
-	struct sock *sk;
+//	struct sock *sk;
 	return 0;
 }
 
@@ -183,10 +183,10 @@ static int raft_inetaddr_event(struct notifier_block *this, unsigned long ev,
 {
 	struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
 	struct raft_sockaddr_entry *addr = NULL;
-	struct raft_sockaddr_entry *temp;
+//	struct raft_sockaddr_entry *temp;
 	struct raft_net *rn = raft_net(dev_net(ifa->ifa_dev->dev));
 //	struct net *net = dev_net(ifa->ifa_dev->dev);
-	int found = 0;
+//	int found = 0;
 
 	switch (ev) {
 	case NETDEV_UP:
