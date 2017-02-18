@@ -41,7 +41,7 @@ extern struct proto raft_prot;
 extern int raft_net_id __read_mostly;
 
 struct raft_node {
-	struct list_head list;
+	struct list_head node_list;
 	uint32_t node_id;
 	uint32_t contact;
 	uint32_t domainid;
@@ -49,8 +49,8 @@ struct raft_node {
 };
 
 struct raft_domain {
-	struct list_head list;
-	struct raft_node *nodes;
+	struct list_head domain_list;
+	struct list_head nodes;
 	uint32_t domain_id;
 	uint32_t heartbeat;
 	uint32_t election;
@@ -59,8 +59,8 @@ struct raft_domain {
 };
 
 struct raft_cluster {
-	struct list_head list;
-	struct raft_domain *domains;
+	struct list_head cluster_list;
+	struct list_head domains;
 	uint32_t cluster_id;
 };
 
@@ -86,8 +86,8 @@ struct raft_net {
 	/* Lock that protects the local_addr_list writers */
 	spinlock_t local_addr_lock;
 
-	/* Access to the raft configuration data */
-	struct raft_cluster *raft_config;
+	/* Entry into the raft configuration data */
+	struct list_head clusters;
 };
 
 static inline struct raft_net *raft_net(struct net *net)
@@ -117,6 +117,19 @@ struct raft_sockaddr_entry {
 	__u8 state;
 	__u8 valid;
 };
+
+int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_cluster_del(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_cluster_set(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_cluster_show(struct sk_buff *skb, struct netlink_callback *cb);
+int raft_nl_domain_add(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_domain_del(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_domain_set(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_domain_show(struct sk_buff *skb, struct netlink_callback *cb);
+int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_node_del(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info);
+int raft_nl_node_show(struct sk_buff *skb, struct netlink_callback *cb);
 
 /* /proc */
 int raft_seq_open(struct inode *inode, struct file *file);

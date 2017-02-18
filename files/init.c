@@ -277,7 +277,7 @@ static int __net_init raft_init_net(struct net *net)
 	struct raft_net *rn = raft_net(net);
 
 	printk("raft_init_net: rn = %p\n", (void *)rn);
-	rn->raft_config = NULL;
+	INIT_LIST_HEAD(&rn->clusters);
 
 	return 0;
 }
