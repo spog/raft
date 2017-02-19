@@ -626,7 +626,7 @@ int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
 	uint32_t node_id;
-	uint32_t contact;
+	__be32 contact;
 	uint32_t domainid;
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
@@ -669,10 +669,10 @@ int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 		return err;
 
 	if (!attrs[RAFT_NLA_NODE_CONTACT])
-		contact = 200;
+		contact = 0x100007f;
 	else
 		contact = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
-	printk("Contact %u\n", contact);
+	printk("Contact 0x%x\n", contact);
 	new->contact = contact;
 
 	return 0;
@@ -735,7 +735,6 @@ int raft_nl_node_del(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
 	uint32_t node_id;
-	uint32_t contact;
 	uint32_t domainid;
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
@@ -776,12 +775,6 @@ int raft_nl_node_del(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		return err;
 
-	if (!attrs[RAFT_NLA_NODE_CONTACT])
-		contact = 200;
-	else
-		contact = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
-	printk("Contact %u\n", contact);
-
 	return 0;
 
 out:
@@ -793,7 +786,7 @@ int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
 	uint32_t node_id;
-	uint32_t contact;
+	__be32 contact;
 	uint32_t domainid;
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
@@ -819,10 +812,10 @@ int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
 	printk("Node ID %u\n", node_id);
 
 	if (!attrs[RAFT_NLA_NODE_CONTACT])
-		contact = 200;
+		contact = 0x100007f;
 	else
 		contact = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
-	printk("Contact %u\n", contact);
+	printk("Contact 0x%x\n", contact);
 
 	if (!attrs[RAFT_NLA_NODE_DOMAINID])
 		return -EINVAL;
@@ -875,7 +868,7 @@ static int raft_config_seq_show(struct seq_file *seq, void *v)
 //			seq_printf(seq,         "        clusterid %u\n", domain->clusterid);
 			list_for_each_entry_safe(node, n_safe, &domain->nodes, node_list) {
 				seq_printf(seq, "        Node: ID %u\n", node->node_id);
-				seq_printf(seq, "            Contact %u\n", node->contact);
+				seq_printf(seq, "            Contact %pI4\n", &node->contact);
 //				seq_printf(seq, "            domainid %u\n", node->domainid);
 //				seq_printf(seq, "            clusterid %u\n", node->clusterid);
 			}

@@ -44,7 +44,7 @@ extern int raft_net_id __read_mostly;
 struct raft_node {
 	struct list_head node_list;
 	uint32_t node_id;
-	uint32_t contact;
+	__be32 contact;		/* Conatact IP address */
 	uint32_t domainid;
 	uint32_t clusterid;
 };
