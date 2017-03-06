@@ -253,6 +253,24 @@ static struct raft_cluster *raft_config_cluster_get(struct raft_net *rnet, uint3
 	return cluster;
 }
 
+static struct raft_cluster *raft_config_cluster_get_next(struct raft_net *rnet, struct raft_cluster *prev_cluster)
+{
+	struct raft_cluster *cluster = NULL;
+	struct raft_cluster *c_safe;
+
+	if (prev_cluster == NULL)
+                cluster = list_first_entry_or_null(&rnet->clusters, struct raft_cluster, cluster_list); 
+	else
+		cluster = list_next_entry(prev_cluster, cluster_list);
+
+//	printk("Cluster list INIT: &rnet->clusters=%p, next: cluster=%p\n", (void *)&rnet->clusters, (void *)cluster);
+
+	if ((struct list_head *)cluster == &rnet->clusters) /*end of cluster_list reached*/
+		return NULL;
+
+	return cluster;
+}
+
 int raft_nl_cluster_set(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
@@ -292,10 +310,109 @@ input_error:
 	return err;
 }
 
+int raft_nl_dump_cluster(struct raft_cluster *cluster, struct raft_nl_msg *msg)
+{
+	struct nlattr *attrs;
+	void *hdr;
+
+	hdr = genlmsg_put(msg->skb, msg->portid, msg->seq, &raft_genl_family,
+			  NLM_F_MULTI, RAFT_NL_CLUSTER_SHOW);
+	if (!hdr)
+		return -EMSGSIZE;
+
+	attrs = nla_nest_start(msg->skb, RAFT_NLA_CLUSTER);
+	if (!attrs)
+		goto msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_CLUSTER_ID, cluster->cluster_id))
+		goto attr_msg_full;
+
+	nla_nest_end(msg->skb, attrs);
+	genlmsg_end(msg->skb, hdr);
+	return 0;
+
+attr_msg_full:
+	nla_nest_cancel(msg->skb, attrs);
+msg_full:
+	genlmsg_cancel(msg->skb, hdr);
+
+	return -EMSGSIZE;
+}
+
 int raft_nl_cluster_show(struct sk_buff *skb, struct netlink_callback *cb)
 {
+	struct net *net = sock_net(skb->sk);
+	struct nlattr **pattrs;
+	struct nlattr *attrs[RAFT_NLA_CLUSTER_MAX + 1];
+	struct raft_nl_msg msg;
+	struct raft_cluster *cluster = NULL;
+	struct raft_cluster *prev_cluster = (struct raft_cluster *)cb->args[1];
+	int done = cb->args[0];
+	uint32_t cluster_id = 0;
+	int err;
+
 	pr_info("Netlink RAFT cluster show called!\n");
-	return 0;
+
+	if (!prev_cluster) {
+		err = raft_nlmsg_parse(cb->nlh, &pattrs);
+		if (err)
+			goto input_error;
+
+		if (!pattrs[RAFT_NLA_CLUSTER]) {
+			err = -EINVAL;
+			goto input_error;
+		}
+
+		err = nla_parse_nested(attrs, RAFT_NLA_CLUSTER_MAX,
+					pattrs[RAFT_NLA_CLUSTER],
+					raft_nl_cluster_policy);
+		if (err)
+			goto input_error;
+
+		if (attrs[RAFT_NLA_CLUSTER_ID]) {
+			cluster_id = nla_get_u32(attrs[RAFT_NLA_CLUSTER_ID]);
+		}
+	}
+
+	if (done)
+		return 0;
+
+	msg.skb = skb;
+	msg.portid = NETLINK_CB(cb->skb).portid;
+	msg.seq = cb->nlh->nlmsg_seq;
+
+	rtnl_lock();
+
+//	printk("Cluster ID %u\n", cluster_id);
+
+	if (cluster_id != 0) {
+		if ((cluster = raft_config_cluster_get(rnet_static_ptr, cluster_id)) != NULL) {
+			raft_nl_dump_cluster(cluster, &msg);
+		} else {
+			rtnl_unlock();
+			return -EEXIST;
+		}
+		done = 1;
+	} else {
+		while ((cluster = raft_config_cluster_get_next(rnet_static_ptr, prev_cluster)) != NULL) {
+			err = raft_nl_dump_cluster(cluster, &msg);
+			if (err) break;
+			prev_cluster = cluster;
+		}
+		if (!err)
+			done = 1;
+	}
+//	printk("Cluster ptr %p\n", (void *)cluster);
+
+	rtnl_unlock();
+	cb->args[0] = done;
+	cb->args[1] = (long)cluster;
+
+	return skb->len;
+
+input_error:
+	printk("Error parsing attributes!\n");
+	return err;
 }
 
 static int raft_config_domain_add(struct raft_net *rnet, uint32_t cluster_id, uint32_t domain_id, struct raft_domain **new)
