@@ -86,14 +86,11 @@ err_nomem:
 
 int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info)
 {
-	struct sk_buff *rep;
-	int rc;
 	int err;
 	uint32_t cluster_id;
 	struct nlattr *attrs[RAFT_NLA_CLUSTER_MAX + 1];
-	void *msg_head;
 	struct raft_cluster *new = NULL;
-	struct net *net = genl_info_net(info);
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT cluster add called!\n");
 
@@ -160,6 +157,7 @@ int raft_nl_cluster_del(struct sk_buff *skb, struct genl_info *info)
 	int err;
 	uint32_t cluster_id;
 	struct nlattr *attrs[RAFT_NLA_CLUSTER_MAX + 1];
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT cluster delete called!\n");
 
@@ -214,10 +212,9 @@ static struct raft_cluster *raft_config_cluster_get(struct raft_net *rnet, uint3
 static struct raft_cluster *raft_config_cluster_get_next(struct raft_net *rnet, struct raft_cluster *prev_cluster)
 {
 	struct raft_cluster *cluster = NULL;
-	struct raft_cluster *c_safe;
 
 	if (prev_cluster == NULL)
-                cluster = list_first_entry_or_null(&rnet->clusters, struct raft_cluster, cluster_list); 
+		cluster = list_first_entry_or_null(&rnet->clusters, struct raft_cluster, cluster_list); 
 	else
 		cluster = list_next_entry(prev_cluster, cluster_list);
 
@@ -235,6 +232,7 @@ int raft_nl_cluster_set(struct sk_buff *skb, struct genl_info *info)
 	uint32_t cluster_id;
 	struct nlattr *attrs[RAFT_NLA_CLUSTER_MAX + 1];
 	struct raft_cluster *cluster = NULL;
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT cluster set called!\n");
 
@@ -299,7 +297,7 @@ msg_full:
 
 int raft_nl_cluster_show(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	struct net *net = sock_net(skb->sk);
+//	struct raft_net *rnet = raft(sock_net(skb->sk));
 	struct nlattr **pattrs;
 	struct nlattr *attrs[RAFT_NLA_CLUSTER_MAX + 1];
 	struct raft_nl_msg msg;
@@ -447,6 +445,7 @@ int raft_nl_domain_add(struct sk_buff *skb, struct genl_info *info)
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_DOMAIN_MAX + 1];
 	struct raft_domain *new = NULL;
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT domain add called!\n");
 
@@ -556,6 +555,7 @@ int raft_nl_domain_del(struct sk_buff *skb, struct genl_info *info)
 	uint32_t domain_id;
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_DOMAIN_MAX + 1];
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT domain delete called!\n");
 
@@ -631,6 +631,30 @@ static struct raft_domain *raft_config_domain_get(struct raft_net *rnet, uint32_
 	return domain;
 }
 
+static struct raft_domain *raft_config_domain_get_next(struct raft_net *rnet, uint32_t cluster_id, struct raft_domain *prev_domain)
+{
+	struct raft_cluster *cluster = NULL;
+	struct raft_domain *domain = NULL;
+
+	if (cluster_id == 0)
+		return NULL;
+
+	if ((cluster = raft_config_cluster_get(rnet, cluster_id)) == NULL)
+		return NULL;
+
+	if (prev_domain == NULL)
+		domain = list_first_entry_or_null(&cluster->domains, struct raft_domain, domain_list); 
+	else
+		domain = list_next_entry(prev_domain, domain_list);
+
+	printk("Domain list INIT: &cluster->domains=%p, next: domain=%p\n", (void *)&cluster->domains, (void *)domain);
+
+	if ((struct list_head *)domain == &cluster->domains) /*end of domain_list reached*/
+		return NULL;
+
+	return domain;
+}
+
 int raft_nl_domain_set(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
@@ -638,6 +662,7 @@ int raft_nl_domain_set(struct sk_buff *skb, struct genl_info *info)
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_DOMAIN_MAX + 1];
 	struct raft_domain *domain = NULL;
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT domain set called!\n");
 
@@ -691,11 +716,131 @@ input_error:
 	return err;
 }
 
+int raft_nl_dump_domain(struct raft_domain *domain, struct raft_nl_msg *msg)
+{
+	struct nlattr *attrs;
+	void *hdr;
+
+	hdr = genlmsg_put(msg->skb, msg->portid, msg->seq, &raft_genl_family,
+			  NLM_F_MULTI, RAFT_NL_DOMAIN_SHOW);
+	if (!hdr)
+		return -EMSGSIZE;
+
+	attrs = nla_nest_start(msg->skb, RAFT_NLA_DOMAIN);
+	if (!attrs)
+		goto msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_DOMAIN_ID, domain->domain_id))
+		goto attr_msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_DOMAIN_HEARTBEAT, domain->heartbeat))
+		goto attr_msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_DOMAIN_ELECTION, domain->election))
+		goto attr_msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_DOMAIN_MAXNODES, domain->maxnodes))
+		goto attr_msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_DOMAIN_CLUSTERID, domain->clusterid))
+		goto attr_msg_full;
+
+	nla_nest_end(msg->skb, attrs);
+	genlmsg_end(msg->skb, hdr);
+	return 0;
+
+attr_msg_full:
+	nla_nest_cancel(msg->skb, attrs);
+msg_full:
+	genlmsg_cancel(msg->skb, hdr);
+
+	return -EMSGSIZE;
+}
+
 int raft_nl_domain_show(struct sk_buff *skb, struct netlink_callback *cb)
 {
+//	struct raft_net *rnet = raft(sock_net(skb->sk));
+	struct nlattr **pattrs;
+	struct nlattr *attrs[RAFT_NLA_DOMAIN_MAX + 1];
+	struct raft_nl_msg msg;
+	struct raft_domain *domain = NULL;
+	struct raft_domain *prev_domain = (struct raft_domain *)cb->args[1];
+	int done = cb->args[0];
+	uint32_t domain_id = 0;
+	uint32_t clusterid = 0;
+	int err;
+
 	pr_info("Netlink RAFT domain show called!\n");
-	return 0;
+
+	if (!prev_domain) {
+		err = raft_nlmsg_parse(cb->nlh, &pattrs);
+		if (err)
+			goto input_error;
+
+		if (!pattrs[RAFT_NLA_DOMAIN]) {
+			err = -EINVAL;
+			goto input_error;
+		}
+
+		err = nla_parse_nested(attrs, RAFT_NLA_DOMAIN_MAX,
+					pattrs[RAFT_NLA_DOMAIN],
+					raft_nl_cluster_policy);
+		if (err)
+			goto input_error;
+
+		if (attrs[RAFT_NLA_DOMAIN_ID]) {
+			domain_id = nla_get_u32(attrs[RAFT_NLA_DOMAIN_ID]);
+		}
+		if (attrs[RAFT_NLA_DOMAIN_CLUSTERID]) {
+			clusterid = nla_get_u32(attrs[RAFT_NLA_DOMAIN_CLUSTERID]);
+		} else {
+			err = -EINVAL;
+			goto input_error;
+		}
+	}
+
+	if (done)
+		return 0;
+
+	msg.skb = skb;
+	msg.portid = NETLINK_CB(cb->skb).portid;
+	msg.seq = cb->nlh->nlmsg_seq;
+
+	rtnl_lock();
+
+	printk("Domain ID %u\n", domain_id);
+	printk("ClusterID %u\n", clusterid);
+
+	if (domain_id != 0) {
+		if ((domain = raft_config_domain_get(rnet_static_ptr, clusterid, domain_id)) != NULL) {
+			raft_nl_dump_domain(domain, &msg);
+		} else {
+			rtnl_unlock();
+			return -EEXIST;
+		}
+		done = 1;
+	} else {
+		while ((domain = raft_config_domain_get_next(rnet_static_ptr, clusterid, prev_domain)) != NULL) {
+			err = raft_nl_dump_domain(domain, &msg);
+			if (err) break;
+			prev_domain = domain;
+		}
+		if (!err)
+			done = 1;
+	}
+	printk("Domain ptr %p\n", (void *)domain);
+
+	rtnl_unlock();
+	cb->args[0] = done;
+	cb->args[1] = (long)domain;
+
+	return skb->len;
+
+input_error:
+	printk("Error parsing attributes!\n");
+	return err;
 }
+
 
 static int raft_config_node_add(struct raft_net *rnet, uint32_t cluster_id, uint32_t domain_id, uint32_t node_id, struct raft_node **new)
 {
@@ -784,6 +929,7 @@ int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
 	struct raft_node *new = NULL;
 	uint8_t *pcontact = (uint8_t *)&contact;
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT node add called!\n");
 
@@ -901,6 +1047,7 @@ int raft_nl_node_del(struct sk_buff *skb, struct genl_info *info)
 	uint32_t domainid;
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT node delete called!\n");
 
@@ -1005,6 +1152,7 @@ int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
 	struct raft_node *node = NULL;
+//	struct raft_net *rnet = raft(genl_info_net(info));
 
 	pr_info("Netlink RAFT node set called!\n");
 
