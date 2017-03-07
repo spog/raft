@@ -127,48 +127,6 @@ int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info)
 input_error:
 	printk("Error parsing attributes!\n");
 	return err;
-
-#if 0
-	/* send a message back*/
-	/* allocate some memory, since the size is not yet known use NLMSG_GOODSIZE*/
-	rep = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
-	if (rep == NULL)
-		goto out;
-
-	/* create the message headers */
-	/* arguments of genlmsg_put:
-	   struct sk_buff *,
-	   int (sending) pid,
-	   int sequence number,
-	   struct genl_family *,
-	   int flags,
-	   u8 command index (why do we need this?)
-	*/
-	msg_head = genlmsg_put(rep, 0, info->snd_seq+1, &raft_genl_family, 0, RAFT_NL_CLUSTER_ADD);
-	if (msg_head == NULL) {
-		rc = -ENOMEM;
-		goto out;
-	}
-#if 1
-	/* add a RAFT_NLA_CLUSTER attribute (actual value to be sent) */
-	rc = nla_put_string(rep, RAFT_NLA_CLUSTER, "hello world from kernel space");
-	if (rc != 0)
-		goto out;
-#endif
-
-	/* finalize the message */
-	genlmsg_end(rep, msg_head);
-
-	/* send the message back */
-	rc = genlmsg_unicast(net, rep, info->snd_portid);
-	if (rc != 0)
-		goto out;
-	return 0;
-
-out:
-	printk("Error parsing attributes!\n");
-	return 0;
-#endif
 }
 
 static int raft_config_cluster_del(struct raft_net *rnet, uint32_t cluster_id)
