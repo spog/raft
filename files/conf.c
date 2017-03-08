@@ -1144,6 +1144,33 @@ static struct raft_node *raft_config_node_get(struct raft_net *rnet, uint32_t cl
 	return node;
 }
 
+static struct raft_node *raft_config_node_get_next(struct raft_net *rnet, uint32_t cluster_id, uint32_t domain_id, struct raft_node *prev_node)
+{
+	struct raft_domain *domain = NULL;
+	struct raft_node *node = NULL;
+
+	if (cluster_id == 0)
+		return NULL;
+
+	if (domain_id == 0)
+		return NULL;
+
+	if ((domain = raft_config_domain_get(rnet, cluster_id, domain_id)) == NULL)
+		return NULL;
+
+	if (prev_node == NULL)
+		node = list_first_entry_or_null(&domain->nodes, struct raft_node, node_list); 
+	else
+		node = list_next_entry(prev_node, node_list);
+
+	printk("Node list INIT: &domain->nodes=%p, next: node=%p\n", (void *)&domain->nodes, (void *)node);
+
+	if ((struct list_head *)node == &domain->nodes) /*end of node_list reached*/
+		return NULL;
+
+	return node;
+}
+
 int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
@@ -1206,11 +1233,137 @@ input_error:
 	return err;
 }
 
+int raft_nl_dump_node(struct raft_node *node, struct raft_nl_msg *msg)
+{
+	struct nlattr *attrs;
+	void *hdr;
+
+	hdr = genlmsg_put(msg->skb, msg->portid, msg->seq, &raft_genl_family,
+			  NLM_F_MULTI, RAFT_NL_NODE_SHOW);
+	if (!hdr)
+		return -EMSGSIZE;
+
+	attrs = nla_nest_start(msg->skb, RAFT_NLA_NODE);
+	if (!attrs)
+		goto msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_NODE_ID, node->node_id))
+		goto attr_msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_NODE_CONTACT, node->contact))
+		goto attr_msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_NODE_DOMAINID, node->domainid))
+		goto attr_msg_full;
+
+	if (nla_put_u32(msg->skb, RAFT_NLA_NODE_CLUSTERID, node->clusterid))
+		goto attr_msg_full;
+
+	nla_nest_end(msg->skb, attrs);
+	genlmsg_end(msg->skb, hdr);
+	return 0;
+
+attr_msg_full:
+	nla_nest_cancel(msg->skb, attrs);
+msg_full:
+	genlmsg_cancel(msg->skb, hdr);
+
+	return -EMSGSIZE;
+}
+
 int raft_nl_node_show(struct sk_buff *skb, struct netlink_callback *cb)
 {
+//	struct raft_net *rnet = raft(sock_net(skb->sk));
+	struct nlattr **pattrs;
+	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
+	struct raft_nl_msg msg;
+	struct raft_node *node = NULL;
+	struct raft_node *prev_node = (struct raft_node *)cb->args[1];
+	int done = cb->args[0];
+	uint32_t node_id = 0;
+	uint32_t domainid = 0;
+	uint32_t clusterid = 0;
+	int err;
+
 	pr_info("Netlink RAFT node show called!\n");
-	return 0;
+
+	if (!prev_node) {
+		err = raft_nlmsg_parse(cb->nlh, &pattrs);
+		if (err)
+			goto input_error;
+
+		if (!pattrs[RAFT_NLA_NODE]) {
+			err = -EINVAL;
+			goto input_error;
+		}
+
+		err = nla_parse_nested(attrs, RAFT_NLA_NODE_MAX,
+					pattrs[RAFT_NLA_NODE],
+					raft_nl_cluster_policy);
+		if (err)
+			goto input_error;
+
+		if (attrs[RAFT_NLA_NODE_ID]) {
+			node_id = nla_get_u32(attrs[RAFT_NLA_NODE_ID]);
+		}
+		if (attrs[RAFT_NLA_NODE_DOMAINID]) {
+			domainid = nla_get_u32(attrs[RAFT_NLA_NODE_DOMAINID]);
+		} else {
+			err = -EINVAL;
+			goto input_error;
+		}
+		if (attrs[RAFT_NLA_NODE_CLUSTERID]) {
+			clusterid = nla_get_u32(attrs[RAFT_NLA_NODE_CLUSTERID]);
+		} else {
+			err = -EINVAL;
+			goto input_error;
+		}
+	}
+
+	if (done)
+		return 0;
+
+	msg.skb = skb;
+	msg.portid = NETLINK_CB(cb->skb).portid;
+	msg.seq = cb->nlh->nlmsg_seq;
+
+	rtnl_lock();
+
+	printk("Node ID %u\n", node_id);
+	printk("DomainID %u\n", domainid);
+	printk("ClusterID %u\n", clusterid);
+
+	if (node_id != 0) {
+		if ((node = raft_config_node_get(rnet_static_ptr, clusterid, domainid, node_id)) != NULL) {
+			raft_nl_dump_node(node, &msg);
+		} else {
+			rtnl_unlock();
+			return -EEXIST;
+		}
+		done = 1;
+	} else {
+		while ((node = raft_config_node_get_next(rnet_static_ptr, clusterid, domainid, prev_node)) != NULL) {
+			err = raft_nl_dump_node(node, &msg);
+			if (err) break;
+			prev_node = node;
+		}
+		if (!err)
+			done = 1;
+	}
+	printk("Node ptr %p\n", (void *)node);
+
+	rtnl_unlock();
+	cb->args[0] = done;
+	cb->args[1] = (long)node;
+
+	return skb->len;
+
+input_error:
+	printk("Error parsing attributes!\n");
+	return err;
 }
+
+
 
 #ifdef CONFIG_PROC_FS
 /* Display raft configuration (/proc/net/raft/config). */
@@ -1226,19 +1379,19 @@ static int raft_config_seq_show(struct seq_file *seq, void *v)
 		struct raft_domain *domain;
 		struct raft_domain *d_safe;
 
-		seq_printf(seq,                 "Cluster: ID %u\n", cluster->cluster_id);
+		seq_printf(seq,                 "cluster %u:\n", cluster->cluster_id);
 		list_for_each_entry_safe(domain, d_safe, &cluster->domains, domain_list) {
 			struct raft_node *node;
 			struct raft_node *n_safe;
 
-			seq_printf(seq,         "    Domain: ID %u\n", domain->domain_id);
-			seq_printf(seq,         "        HeartBeat %u\n", domain->heartbeat);
-			seq_printf(seq,         "        Election %u\n", domain->election);
-			seq_printf(seq,         "        MaxNodes %u\n", domain->maxnodes);
+			seq_printf(seq,         "    domain %u:\n", domain->domain_id);
+			seq_printf(seq,         "        heartbeat %u\n", domain->heartbeat);
+			seq_printf(seq,         "        election %u\n", domain->election);
+			seq_printf(seq,         "        maxnodes %u\n", domain->maxnodes);
 //			seq_printf(seq,         "        clusterid %u\n", domain->clusterid);
 			list_for_each_entry_safe(node, n_safe, &domain->nodes, node_list) {
-				seq_printf(seq, "        Node: ID %u\n", node->node_id);
-				seq_printf(seq, "            Contact %pI4\n", &node->contact);
+				seq_printf(seq, "        node %u:\n", node->node_id);
+				seq_printf(seq, "            contact %pI4\n", &node->contact);
 //				seq_printf(seq, "            domainid %u\n", node->domainid);
 //				seq_printf(seq, "            clusterid %u\n", node->clusterid);
 			}
