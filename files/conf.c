@@ -519,7 +519,7 @@ static int raft_config_domain_del(struct raft_net *rnet, uint32_t cluster_id, ui
 
 //	printk("Cluster list before search: &rnet->clusters=%p\n", (void *)&rnet->clusters);
 	list_for_each_entry_safe(cluster, c_safe, &rnet->clusters, cluster_list) {
-		printk("Cluster list in search: cluster=%p\n", (void *)cluster);
+//		printk("Cluster list in search: cluster=%p\n", (void *)cluster);
 		if (cluster->cluster_id == cluster_id)
 			break;
 	}
