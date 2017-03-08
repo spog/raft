@@ -1132,7 +1132,7 @@ static struct raft_node *raft_config_node_get(struct raft_net *rnet, uint32_t cl
 
 //	printk("Node list before search: &domain->nodes=%p\n", (void *)&domain->nodes);
 	list_for_each_entry_safe(node, n_safe, &domain->nodes, node_list) {
-		printk("Node list in search: node=%p\n", (void *)node);
+//		printk("Node list in search: node=%p\n", (void *)node);
 		if (node->node_id == node_id)
 			break;
 	}
