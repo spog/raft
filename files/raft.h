@@ -41,12 +41,32 @@
 extern struct proto raft_prot;
 extern int raft_net_id __read_mostly;
 
+/* Raft Node States */
+enum {
+	RAFT_NODE_ST_UNSPEC,
+
+	RAFT_NODE_ST_INIT_10,
+	RAFT_NODE_ST_INIT_20,
+	RAFT_NODE_ST_INIT_30,
+
+	RAFT_NODE_ST_CONNECT_10,
+	RAFT_NODE_ST_CONNECT_20,
+	RAFT_NODE_ST_CONNECT_30,
+
+	__RAFT_NODE_ST_MAX,
+	RAFT_NODE_ST_MAX = __RAFT_NODE_ST_MAX - 1
+};
+
+struct raft_local_node;
+
 struct raft_node {
 	struct list_head node_list;
 	uint32_t node_id;
 	__be32 contact;		/* Conatact IP address */
 	uint32_t domainid;
 	uint32_t clusterid;
+	struct raft_local_node *local;
+	struct net *net;
 };
 
 struct raft_domain {
@@ -89,6 +109,16 @@ struct raft_net {
 
 	/* Entry into the raft configuration data */
 	struct list_head clusters;
+
+	/* Entry into the raft nodes list */
+	struct list_head locals;
+};
+
+struct raft_local_node {
+	struct list_head local_node_list;
+	struct raft_cluster *cluster;
+	struct raft_domain *domain;
+	struct raft_node *node;
 };
 
 static inline struct raft_net *raft_net(struct net *net)
@@ -99,24 +129,6 @@ static inline struct raft_net *raft_net(struct net *net)
 enum {
   IPPROTO_RAFT = 254,		/* RAFT in IP		*/
 #define IPPROTO_RAFT		IPPROTO_RAFT
-};
-
-/* A convenience structure for handling sockaddr structures.
- * We should wean ourselves off this.
- */
-union raft_addr {
-	struct sockaddr_in v4;
-	struct sockaddr_in6 v6;
-	struct sockaddr sa;
-};
-
-/* This is a structure for holding either an IPv6 or an IPv4 address.  */
-struct raft_sockaddr_entry {
-	struct list_head list;
-	struct rcu_head	rcu;
-	union raft_addr a;
-	__u8 state;
-	__u8 valid;
 };
 
 int raft_nl_cluster_add(struct sk_buff *skb, struct genl_info *info);
