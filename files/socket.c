@@ -48,5 +48,53 @@ struct proto raft_prot = {
 //	.sysctl_rmem	= sysctl_raft_rmem
 };
 
+/* Verify that this is a valid address. */
+static inline int raft_verify_addr(struct sock *sk, union raft_addr *addr,
+				   int len)
+{
+	struct raft_af *af;
+
+#if 0
+	/* Verify basic sockaddr. */
+	af = raft_sockaddr_af(raft_sk(sk), addr, len);
+	if (!af)
+		return -EINVAL;
+
+	/* Is this a valid SCTP address?  */
+	if (!af->addr_valid(addr, sctp_sk(sk), NULL))
+		return -EINVAL;
+
+	if (!sctp_sk(sk)->pf->send_verify(sctp_sk(sk), (addr)))
+		return -EINVAL;
+#endif
+
+	return 0;
+}
+
+/* set addr events to assocs in the endpoint.  ep and addr_wq must be locked */
+int raft_asconf_mgmt(struct raft_sock *sp, struct raft_sockaddr_entry *addrw)
+{
+	struct sock *sk = raft_opt2sk(sp);
+	union raft_addr *addr;
+	struct raft_af *af;
+
+	/* It is safe to write port space in caller. */
+	addr = &addrw->a;
+//	addr->v4.sin_port = htons(sp->ep->base.bind_addr.port);
+	af = raft_get_af_specific(addr->sa.sa_family);
+	if (!af)
+		return -EINVAL;
+	if (raft_verify_addr(sk, addr, af->sockaddr_len))
+		return -EINVAL;
+
+#if 0
+	if (addrw->state == SCTP_ADDR_NEW)
+		return sctp_send_asconf_add_ip(sk, (struct sockaddr *)addr, 1);
+	else
+		return sctp_send_asconf_del_ip(sk, (struct sockaddr *)addr, 1);
+#else
+	return 0;
+#endif
+}
 
 

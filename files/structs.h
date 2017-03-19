@@ -47,6 +47,9 @@ struct raft_sock {
 	/* inet_sock has to be the first member of raft_sock */
 	struct inet_sock inet;
 
+	/* PF_ family specific functions.  */
+	struct raft_pf *pf;
+
 	/* What is our base endpointer? */
 	struct raft_endpoint *ep;
 
@@ -58,7 +61,23 @@ struct raft_sock {
 
 	/* Flags controlling Heartbeat, SACK delay, and Path MTU Discovery. */
 	__u32 param_flags;
+
+	/* These must be the last fields, as they will skipped on copies,
+	 * like on accept and peeloff operations
+	 */
+	struct list_head auto_asconf_list;
+	int do_auto_asconf;
 };
+
+static inline struct raft_sock *sctp_sk(const struct sock *sk)
+{
+       return (struct raft_sock *)sk;
+}
+
+static inline struct sock *raft_opt2sk(const struct raft_sock *sp)
+{
+       return (struct sock *)sp;
+}
 
 struct raft_endpoint {
 	/* This is really a list of struct raft_association entries. */

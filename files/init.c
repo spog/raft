@@ -71,6 +71,7 @@ static void raft_v4_copy_addrlist(struct list_head *addrlist,
 			addr->a.v4.sin_family = AF_INET;
 			addr->a.v4.sin_port = 0;
 			addr->a.v4.sin_addr.s_addr = ifa->ifa_local;
+			printk("raft_v4_copy_addrlist: IP local = %pI4\n", &addr->a.v4.sin_addr.s_addr);
 			addr->valid = 1;
 			INIT_LIST_HEAD(&addr->list);
 			list_add_tail(&addr->list, addrlist);
@@ -314,8 +315,9 @@ static void raft_addr_wq_timeout_handler(unsigned long arg)
 	struct net *net = (struct net *)arg;
 	struct raft_net *rn = raft_net(net);
 	struct raft_sockaddr_entry *addrw, *temp;
-//	struct raft_sock *sp;
+	struct raft_sock *sp;
 
+	printk("raft_addr_wq_timeout_handler:\n");
 	spin_lock_bh(&rn->addr_wq_lock);
 
 	list_for_each_entry_safe(addrw, temp, &rn->addr_waitq, list) {
@@ -350,18 +352,20 @@ static void raft_addr_wq_timeout_handler(unsigned long arg)
 			}
 		}
 #endif
+#endif
 		list_for_each_entry(sp, &rn->auto_asconf_splist, auto_asconf_list) {
 			struct sock *sk;
 
-			sk = sctp_opt2sk(sp);
+			sk = raft_opt2sk(sp);
 			/* ignore bound-specific endpoints */
-			if (!sctp_is_ep_boundall(sk))
-				continue;
+//			if (!sctp_is_ep_boundall(sk))
+//				continue;
 			bh_lock_sock(sk);
-			if (sctp_asconf_mgmt(sp, addrw) < 0)
-				pr_debug("%s: sctp_asconf_mgmt failed\n", __func__);
+			if (raft_asconf_mgmt(sp, addrw) < 0)
+				pr_debug("%s: raft_asconf_mgmt failed\n", __func__);
 			bh_unlock_sock(sk);
 		}
+#if 0
 #if IS_ENABLED(CONFIG_IPV6)
 free_next:
 #endif
@@ -482,6 +486,7 @@ static int raft_inetaddr_event(struct notifier_block *this, unsigned long ev,
 	struct raft_net *rn = raft_net(net);
 	int found = 0;
 
+	printk("raft_inetaddr_event:\n");
 	switch (ev) {
 	case NETDEV_UP:
 		addr = kmalloc(sizeof(struct raft_sockaddr_entry), GFP_ATOMIC);
@@ -562,6 +567,21 @@ int raft_register_af(struct raft_af *af)
 	INIT_LIST_HEAD(&af->list);
 	list_add_tail(&af->list, &raft_address_families);
 	return 1;
+}
+
+/* Get the table of functions for manipulating a particular address
+ * family.
+ */
+struct raft_af *raft_get_af_specific(sa_family_t family)
+{
+	switch (family) {
+	case AF_INET:
+		return raft_af_v4_specific;
+	case AF_INET6:
+		return raft_af_v6_specific;
+	default:
+		return NULL;
+	}
 }
 
 static void raft_v4_pf_init(void)

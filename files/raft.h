@@ -36,6 +36,8 @@
 
 #define RAFT_PROTOSW_FLAG 0
 
+int raft_asconf_mgmt(struct raft_sock *, struct raft_sockaddr_entry *);
+
 /* External references. */
 
 extern struct proto raft_prot;
