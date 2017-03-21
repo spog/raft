@@ -48,6 +48,20 @@ int raft_rcv(struct sk_buff *skb)
 	return 0;
 }
 
+/* Compare two addresses exactly. */
+static int raft_v4_cmp_addr(const union raft_addr *addr1,
+			    const union raft_addr *addr2)
+{
+	if (addr1->sa.sa_family != addr2->sa.sa_family)
+		return 0;
+	if (addr1->v4.sin_port != addr2->v4.sin_port)
+		return 0;
+	if (addr1->v4.sin_addr.s_addr != addr2->v4.sin_addr.s_addr)
+		return 0;
+
+	return 1;
+}
+
 /* Private helper to extract ipv4 address and stash them in
  * the protocol structure.
  */
@@ -260,7 +274,7 @@ static struct raft_af raft_af_inet = {
 //	.from_sk	   = sctp_v4_from_sk,
 //	.from_addr_param   = sctp_v4_from_addr_param,
 //	.to_addr_param	   = sctp_v4_to_addr_param,
-//	.cmp_addr	   = sctp_v4_cmp_addr,
+	.cmp_addr	   = raft_v4_cmp_addr,
 //	.addr_valid	   = sctp_v4_addr_valid,
 //	.inaddr_any	   = sctp_v4_inaddr_any,
 //	.is_any		   = sctp_v4_is_any,

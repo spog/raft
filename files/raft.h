@@ -59,18 +59,32 @@ enum {
 	RAFT_NODE_ST_MAX = __RAFT_NODE_ST_MAX - 1
 };
 
-struct raft_local_node;
+/* Raft Relation States */
+enum {
+	RAFT_REL_ST_UNSPEC,
 
+	RAFT_REL_ST_INIT,
+
+	__RAFT_REL_ST_MAX,
+	RAFT_REL_ST_MAX = __RAFT_REL_ST_MAX - 1
+};
+
+struct raft_domain;
 struct raft_node {
 	struct list_head node_list;
 	uint32_t node_id;
-	__be32 contact;		/* Conatact IP address */
-	uint32_t domainid;
-	uint32_t clusterid;
-	struct raft_local_node *local;
-	struct net *net;
+	union raft_addr contact_addr;
+	struct raft_domain *domain;
 };
 
+struct raft_relation {
+	struct list_head relation_list;
+	struct raft_node *local_node;
+	struct raft_node *peer_node;
+	uint32_t relation_state;
+};
+
+struct raft_cluster;
 struct raft_domain {
 	struct list_head domain_list;
 	struct list_head nodes;
@@ -78,7 +92,10 @@ struct raft_domain {
 	uint32_t heartbeat;
 	uint32_t election;
 	uint32_t maxnodes;
-	uint32_t clusterid;
+	struct raft_cluster *cluster;
+
+	/* Entry into the local nodes and their relation data */
+	struct list_head relations;
 };
 
 struct raft_cluster {

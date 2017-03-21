@@ -52,9 +52,9 @@ struct proto raft_prot = {
 static inline int raft_verify_addr(struct sock *sk, union raft_addr *addr,
 				   int len)
 {
+#if 0
 	struct raft_af *af;
 
-#if 0
 	/* Verify basic sockaddr. */
 	af = raft_sockaddr_af(raft_sk(sk), addr, len);
 	if (!af)
