@@ -74,6 +74,7 @@ struct raft_node {
 	struct list_head node_list;
 	uint32_t node_id;
 	union raft_addr contact_addr;
+	int local;
 	struct raft_domain *domain;
 };
 

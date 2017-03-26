@@ -416,6 +416,7 @@ static int raft_config_domain_add(struct raft_net *rnet, uint32_t cluster_id, ui
 	INIT_LIST_HEAD(&(*new)->nodes);
 	(*new)->domain_id = domain_id;
 	(*new)->cluster = cluster;
+	INIT_LIST_HEAD(&(*new)->relations);
 //	printk("New Domain ID %u\n", (*new)->domain_id);
 
 	if ((struct list_head *)domain == &cluster->domains) {
@@ -918,6 +919,160 @@ err_nomem:
 	return err;
 }
 
+static int raft_check_locals(struct net *net, union raft_addr *addr)
+{
+	struct raft_af *af = raft_get_af_specific(AF_INET);
+	struct raft_net *rn = raft_net(net);
+	struct raft_sockaddr_entry *local_entry;
+	struct list_head *pos, *temp;
+
+	list_for_each_safe(pos, temp, &rn->local_addr_list) {
+		local_entry = list_entry(pos, struct raft_sockaddr_entry, list);
+		if (af->cmp_addr(&local_entry->a, addr))
+			return 1;
+	}
+
+	return 0;
+}
+
+int raft_relations_add_node(struct raft_node *new_node)
+{
+	struct raft_domain *domain;
+	struct raft_node *node, *n_safe;
+	struct raft_relation *relation, *r_safe, *new;
+	int err;
+
+	if (!new_node)
+		return -EINVAL;
+
+	domain = new_node->domain;
+	if (!domain)
+		return -EINVAL;
+
+	/* this is a new node, so there may be no existing relations with this node_id */
+	printk("Go through all domain relations\n");
+	list_for_each_entry_safe(relation, r_safe, &domain->relations, relation_list) {
+		if (relation->local_node->node_id == new_node->node_id)
+			return -EEXIST;
+		if (relation->peer_node->node_id == new_node->node_id)
+			return -EEXIST;
+	}
+
+	printk("Go through all domain nodes\n");
+	list_for_each_entry_safe(node, n_safe, &domain->nodes, node_list) {
+		if (node != new_node) {
+			if (new_node->local) {
+				new = kmalloc(sizeof(*new), GFP_ATOMIC);
+				if (!new) {
+					err = -ENOMEM;
+					goto err_nomem;
+				}
+				new->local_node = new_node;
+				new->peer_node = node;
+				new->relation_state = RAFT_REL_ST_UNSPEC;
+				printk("Inserting New Relation: Local Node ID %u, Peer Node ID %u\n", new->local_node->node_id, new->peer_node->node_id);
+				list_add(&new->relation_list, &domain->relations);
+			}
+
+			if (node->local) {
+				new = kmalloc(sizeof(*new), GFP_ATOMIC);
+				if (!new) {
+					err = -ENOMEM;
+					goto err_nomem;
+				}
+				new->local_node = node;
+				new->peer_node = new_node;
+				new->relation_state = RAFT_REL_ST_UNSPEC;
+				printk("Inserting New Relation: Local Node ID %u, Peer Node ID %u\n", new->local_node->node_id, new->peer_node->node_id);
+				list_add(&new->relation_list, &domain->relations);
+			}
+		}
+	}
+
+	return 0;
+
+err_nomem:
+	return err;
+}
+
+int raft_relations_del_node(struct raft_node *old_node)
+{
+	struct raft_domain *domain;
+	struct raft_relation *relation, *r_safe;
+
+	if (!old_node)
+		return -EINVAL;
+
+	domain = old_node->domain;
+	if (!domain)
+		return -EINVAL;
+
+	/* this is a old node, so there are existing relations to be deleted */
+	printk("Go through all domain relations\n");
+	list_for_each_entry_safe(relation, r_safe, &domain->relations, relation_list) {
+		if (
+			(relation->local_node == old_node) ||
+			(relation->peer_node == old_node)
+		) {
+			printk("Deleting Relation: Local Node ID %u, Peer Node ID %u\n", relation->local_node->node_id, relation->peer_node->node_id);
+			list_del(&relation->relation_list);
+			kfree(relation);
+		}
+	}
+
+	return 0;
+}
+
+int raft_relations_change_node(struct raft_node *old_node, union raft_addr *new_addr, int local)
+{
+	struct raft_domain *domain;
+//	struct raft_node *node, *n_safe;
+	struct raft_relation *relation, *r_safe;
+//	int err;
+
+	if (!old_node)
+		return -EINVAL;
+
+	domain = old_node->domain;
+	if (!domain)
+		return -EINVAL;
+
+	/* this is a old node, so there are existing relations to be changed */
+	if (old_node->local == local) {
+		/* local stays local, peer stays peer */
+		/* just reset state of the relation and change node's contact_addr */
+		printk("Go through all domain relations\n");
+		list_for_each_entry_safe(relation, r_safe, &domain->relations, relation_list) {
+			if (
+				(relation->local_node == old_node) ||
+				(relation->peer_node == old_node)
+			) {
+				printk("Reseting Relation state: Local Node ID %u, Peer Node ID %u\n", relation->local_node->node_id, relation->peer_node->node_id);
+				relation->relation_state = RAFT_REL_ST_UNSPEC;
+			}
+			old_node->contact_addr.v4.sin_family = new_addr->v4.sin_family;
+			old_node->contact_addr.v4.sin_port = new_addr->v4.sin_port;
+			old_node->contact_addr.v4.sin_addr.s_addr = new_addr->v4.sin_addr.s_addr;
+		}
+	} else {
+		/* local becomes peer or peer becomes local */
+		/* first delete old_node relations, change its contact_addr and local and create new relations */
+		printk("delete changed relations\n");
+		if (raft_relations_del_node(old_node) != 0)
+			printk("Error deleting node relations\n");
+
+		old_node->contact_addr.v4.sin_family = new_addr->v4.sin_family;
+		old_node->contact_addr.v4.sin_port = new_addr->v4.sin_port;
+		old_node->contact_addr.v4.sin_addr.s_addr = new_addr->v4.sin_addr.s_addr;
+		old_node->local = local;
+
+		printk("create changed relations\n");
+		return raft_relations_add_node(old_node);
+	}
+
+	return 0;
+}
+
 int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
@@ -928,7 +1083,7 @@ int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
 	struct raft_node *new = NULL;
 	uint8_t *pcontact = (uint8_t *)&contact;
-//	struct raft_net *rnet = raft(genl_info_net(info));
+	struct net *net = genl_info_net(info);
 
 //	pr_info("Netlink RAFT node add called!\n");
 
@@ -980,10 +1135,15 @@ int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 		pcontact[3] = 1;
 	} else
 		contact = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
-//	printk("Contact 0x%x\n", contact);
-	new->contact_addr.v4.sin_addr.s_addr = contact;
 
-	return 0;
+//	printk("Contact 0x%x\n", contact);
+	new->contact_addr.v4.sin_family = AF_INET;
+	new->contact_addr.v4.sin_port = 0;
+	new->contact_addr.v4.sin_addr.s_addr = contact;
+	new->local = raft_check_locals(net, &new->contact_addr);
+
+	printk("create new relations\n");
+	return raft_relations_add_node(new);
 
 input_error:
 	printk("Error parsing attributes!\n");
@@ -1031,6 +1191,9 @@ static int raft_config_node_del(struct raft_net *rnet, uint32_t cluster_id, uint
 
 	if ((struct list_head *)node == &domain->nodes) /*node not found*/
 		return -EEXIST;
+
+	if (raft_relations_del_node(node) != 0)
+		printk("Error deleting node relations\n");
 
 	list_del(&node->node_list);
 
@@ -1174,11 +1337,13 @@ int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
 {
 	int err;
 	uint32_t node_id;
+	union raft_addr contact_addr;
+	int local;
 	uint32_t domainid;
 	uint32_t clusterid;
 	struct nlattr *attrs[RAFT_NLA_NODE_MAX + 1];
 	struct raft_node *node = NULL;
-//	struct raft_net *rnet = raft(genl_info_net(info));
+	struct net *net = genl_info_net(info);
 
 //	pr_info("Netlink RAFT node set called!\n");
 
@@ -1221,9 +1386,19 @@ int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
 	if (!node)
 		return -EEXIST;
 
-	if (attrs[RAFT_NLA_NODE_CONTACT])
-		node->contact_addr.v4.sin_addr.s_addr = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
-//	printk("Contact 0x%x\n", node->contact_addr.v4.sin_addr.s_addr);
+	if (attrs[RAFT_NLA_NODE_CONTACT]) {
+		contact_addr.v4.sin_family = AF_INET;
+		contact_addr.v4.sin_port = 0;
+		contact_addr.v4.sin_addr.s_addr = nla_get_u32(attrs[RAFT_NLA_NODE_CONTACT]);
+
+//		printk("Contact 0x%x\n", contact);
+		if (contact_addr.v4.sin_addr.s_addr != node->contact_addr.v4.sin_addr.s_addr) {
+			local = raft_check_locals(net, &contact_addr);
+
+			printk("change relations\n");
+			return raft_relations_change_node(node, &contact_addr, local);
+		}
+	}
 
 	return 0;
 
@@ -1391,6 +1566,7 @@ static int raft_config_seq_show(struct seq_file *seq, void *v)
 			list_for_each_entry_safe(node, n_safe, &domain->nodes, node_list) {
 				seq_printf(seq, "        node %u:\n", node->node_id);
 				seq_printf(seq, "            contact %pI4\n", &node->contact_addr.v4.sin_addr.s_addr);
+				seq_printf(seq, "            local %d\n", node->local);
 //				seq_printf(seq, "            domainid %u\n", node->domain->domain_id);
 //				seq_printf(seq, "            clusterid %u\n", node->domain->cluster->cluster_id);
 			}
