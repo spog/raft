@@ -437,10 +437,10 @@ static struct raft_sockaddr_entry *raft_addr_wq_lookup(struct net *net,
 void raft_addr_wq_mgmt(struct net *net, struct raft_sockaddr_entry *addr, int cmd)
 {
 	struct raft_net *rn = raft_net(net);
-#if 1
 	struct raft_sockaddr_entry *addrw;
 	unsigned long timeo_val;
 
+	printk("raft_addr_wq_mgmt:\n");
 	/* first, we check if an opposite message already exist in the queue.
 	 * If we found such message, it is removed.
 	 * This operation is a bit stupid, but the DHCP client attaches the
@@ -448,6 +448,7 @@ void raft_addr_wq_mgmt(struct net *net, struct raft_sockaddr_entry *addr, int cm
 	 */
 
 	spin_lock_bh(&rn->addr_wq_lock);
+#if 0
 	/* Offsets existing events in addr_wq */
 	addrw = raft_addr_wq_lookup(net, addr);
 	if (addrw) {
@@ -480,8 +481,9 @@ void raft_addr_wq_mgmt(struct net *net, struct raft_sockaddr_entry *addr, int cm
 		timeo_val += msecs_to_jiffies(RAFT_ADDRESS_TICK_DELAY);
 		mod_timer(&rn->addr_wq_timer, timeo_val);
 	}
-	spin_unlock_bh(&rn->addr_wq_lock);
+#else
 #endif
+	spin_unlock_bh(&rn->addr_wq_lock);
 }
 
 /* Event handler for inet address addition/deletion events.

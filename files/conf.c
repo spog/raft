@@ -995,24 +995,24 @@ err_nomem:
 	return err;
 }
 
-int raft_relations_del_node(struct raft_node *old_node)
+int raft_relations_del_node(struct raft_node *node)
 {
 	struct raft_domain *domain;
 	struct raft_relation *relation, *r_safe;
 
-	if (!old_node)
+	if (!node)
 		return -EINVAL;
 
-	domain = old_node->domain;
+	domain = node->domain;
 	if (!domain)
 		return -EINVAL;
 
-	/* this is a old node, so there are existing relations to be deleted */
+	/* this is an existing node, so there are existing relations to be deleted */
 	printk("Go through all domain relations\n");
 	list_for_each_entry_safe(relation, r_safe, &domain->relations, relation_list) {
 		if (
-			(relation->local_node == old_node) ||
-			(relation->peer_node == old_node)
+			(relation->local_node == node) ||
+			(relation->peer_node == node)
 		) {
 			printk("Deleting Relation: Local Node ID %u, Peer Node ID %u\n", relation->local_node->node_id, relation->peer_node->node_id);
 			list_del(&relation->relation_list);
@@ -1023,51 +1023,49 @@ int raft_relations_del_node(struct raft_node *old_node)
 	return 0;
 }
 
-int raft_relations_change_node(struct raft_node *old_node, union raft_addr *new_addr, int local)
+int raft_relations_change_node(struct raft_node *node, union raft_addr *new_addr, int local)
 {
 	struct raft_domain *domain;
-//	struct raft_node *node, *n_safe;
 	struct raft_relation *relation, *r_safe;
-//	int err;
 
-	if (!old_node)
+	if (!node)
 		return -EINVAL;
 
-	domain = old_node->domain;
+	domain = node->domain;
 	if (!domain)
 		return -EINVAL;
 
 	/* this is a old node, so there are existing relations to be changed */
-	if (old_node->local == local) {
+	if (node->local == local) {
 		/* local stays local, peer stays peer */
 		/* just reset state of the relation and change node's contact_addr */
 		printk("Go through all domain relations\n");
 		list_for_each_entry_safe(relation, r_safe, &domain->relations, relation_list) {
 			if (
-				(relation->local_node == old_node) ||
-				(relation->peer_node == old_node)
+				(relation->local_node == node) ||
+				(relation->peer_node == node)
 			) {
 				printk("Reseting Relation state: Local Node ID %u, Peer Node ID %u\n", relation->local_node->node_id, relation->peer_node->node_id);
 				relation->relation_state = RAFT_REL_ST_UNSPEC;
 			}
-			old_node->contact_addr.v4.sin_family = new_addr->v4.sin_family;
-			old_node->contact_addr.v4.sin_port = new_addr->v4.sin_port;
-			old_node->contact_addr.v4.sin_addr.s_addr = new_addr->v4.sin_addr.s_addr;
+			node->contact_addr.v4.sin_family = new_addr->v4.sin_family;
+			node->contact_addr.v4.sin_port = new_addr->v4.sin_port;
+			node->contact_addr.v4.sin_addr.s_addr = new_addr->v4.sin_addr.s_addr;
 		}
 	} else {
 		/* local becomes peer or peer becomes local */
-		/* first delete old_node relations, change its contact_addr and local and create new relations */
+		/* first delete old node relations, change its contact_addr and local and create new relations */
 		printk("delete changed relations\n");
-		if (raft_relations_del_node(old_node) != 0)
+		if (raft_relations_del_node(node) != 0)
 			printk("Error deleting node relations\n");
 
-		old_node->contact_addr.v4.sin_family = new_addr->v4.sin_family;
-		old_node->contact_addr.v4.sin_port = new_addr->v4.sin_port;
-		old_node->contact_addr.v4.sin_addr.s_addr = new_addr->v4.sin_addr.s_addr;
-		old_node->local = local;
+		node->contact_addr.v4.sin_family = new_addr->v4.sin_family;
+		node->contact_addr.v4.sin_port = new_addr->v4.sin_port;
+		node->contact_addr.v4.sin_addr.s_addr = new_addr->v4.sin_addr.s_addr;
+		node->local = local;
 
 		printk("create changed relations\n");
-		return raft_relations_add_node(old_node);
+		return raft_relations_add_node(node);
 	}
 
 	return 0;
