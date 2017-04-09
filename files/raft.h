@@ -80,6 +80,8 @@ struct raft_node {
 
 struct raft_relation {
 	struct list_head relation_list;
+	union raft_addr src_addr;
+	union raft_addr dst_addr;
 	struct raft_node *local_node;
 	struct raft_node *peer_node;
 	uint32_t relation_state;

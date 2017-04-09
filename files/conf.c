@@ -935,11 +935,33 @@ static int raft_check_locals(struct net *net, union raft_addr *addr)
 	return 0;
 }
 
-int raft_relations_add_node(struct raft_node *new_node)
+static __be32 raft_get_source_addr(struct net *net, __be32 dest_addr, int local)
+{
+	struct net_device *dev;
+	 __be32 newsrc = 0;
+
+	rcu_read_lock();
+	for_each_netdev_rcu(net, dev) {
+		if (local != 0) {
+			newsrc = inet_select_addr(dev, dest_addr, RT_SCOPE_LINK);
+		} else {
+			newsrc = inet_select_addr(dev, dest_addr, RT_SCOPE_UNIVERSE);
+		}
+//		printk("source IP (%pI4) for destiantion %pI4\n", &newsrc, &dest_addr);
+		if (newsrc != 0)
+			break;
+	}
+	rcu_read_unlock();
+
+	return newsrc;
+}
+
+int raft_relations_add_node(struct net *net, struct raft_node *new_node)
 {
 	struct raft_domain *domain;
 	struct raft_node *node, *n_safe;
 	struct raft_relation *relation, *r_safe, *new;
+	__be32 srcip;
 	int err;
 
 	if (!new_node)
@@ -949,7 +971,7 @@ int raft_relations_add_node(struct raft_node *new_node)
 	if (!domain)
 		return -EINVAL;
 
-	/* this is a new node, so there may be no existing relations with this node_id */
+	/* this is a new node, so there may not exist any relations with this node_id */
 	printk("Go through all domain relations\n");
 	list_for_each_entry_safe(relation, r_safe, &domain->relations, relation_list) {
 		if (relation->local_node->node_id == new_node->node_id)
@@ -962,29 +984,49 @@ int raft_relations_add_node(struct raft_node *new_node)
 	list_for_each_entry_safe(node, n_safe, &domain->nodes, node_list) {
 		if (node != new_node) {
 			if (new_node->local) {
-				new = kmalloc(sizeof(*new), GFP_ATOMIC);
-				if (!new) {
-					err = -ENOMEM;
-					goto err_nomem;
-				}
-				new->local_node = new_node;
-				new->peer_node = node;
-				new->relation_state = RAFT_REL_ST_UNSPEC;
-				printk("Inserting New Relation: Local Node ID %u, Peer Node ID %u\n", new->local_node->node_id, new->peer_node->node_id);
-				list_add(&new->relation_list, &domain->relations);
+				srcip = raft_get_source_addr(net, node->contact_addr.v4.sin_addr.s_addr, node->local);
+				if (srcip != 0) {
+					new = kmalloc(sizeof(*new), GFP_ATOMIC);
+					if (!new) {
+						err = -ENOMEM;
+						goto err_nomem;
+					}
+					new->src_addr.v4.sin_family = AF_INET;
+					new->src_addr.v4.sin_port = 0;
+					new->src_addr.v4.sin_addr.s_addr = srcip;
+					new->dst_addr.v4.sin_family = AF_INET;
+					new->dst_addr.v4.sin_port = 0;
+					new->dst_addr.v4.sin_addr.s_addr = node->contact_addr.v4.sin_addr.s_addr;
+					new->local_node = new_node;
+					new->peer_node = node;
+					new->relation_state = RAFT_REL_ST_UNSPEC;
+					printk("Inserting New Relation: Local Node ID %u@%pI4, Peer Node ID %u@%pI4\n", new->local_node->node_id, &new->src_addr.v4.sin_addr.s_addr, new->peer_node->node_id, &new->dst_addr.v4.sin_addr.s_addr);
+					list_add(&new->relation_list, &domain->relations);
+				} else
+					printk("Inserting New Relation failed - no route to contact address: %pI4\n", &node->contact_addr.v4.sin_addr.s_addr);
 			}
 
 			if (node->local) {
-				new = kmalloc(sizeof(*new), GFP_ATOMIC);
-				if (!new) {
-					err = -ENOMEM;
-					goto err_nomem;
-				}
-				new->local_node = node;
-				new->peer_node = new_node;
-				new->relation_state = RAFT_REL_ST_UNSPEC;
-				printk("Inserting New Relation: Local Node ID %u, Peer Node ID %u\n", new->local_node->node_id, new->peer_node->node_id);
-				list_add(&new->relation_list, &domain->relations);
+				srcip = raft_get_source_addr(net, new_node->contact_addr.v4.sin_addr.s_addr, new_node->local);
+				if (srcip != 0) {
+					new = kmalloc(sizeof(*new), GFP_ATOMIC);
+					if (!new) {
+						err = -ENOMEM;
+						goto err_nomem;
+					}
+					new->src_addr.v4.sin_family = AF_INET;
+					new->src_addr.v4.sin_port = 0;
+					new->src_addr.v4.sin_addr.s_addr = srcip;
+					new->dst_addr.v4.sin_family = AF_INET;
+					new->dst_addr.v4.sin_port = 0;
+					new->dst_addr.v4.sin_addr.s_addr = new_node->contact_addr.v4.sin_addr.s_addr;
+					new->local_node = node;
+					new->peer_node = new_node;
+					new->relation_state = RAFT_REL_ST_UNSPEC;
+					printk("Inserting New Relation: Local Node ID %u@%pI4, Peer Node ID %u@%pI4\n", new->local_node->node_id, &new->src_addr.v4.sin_addr.s_addr, new->peer_node->node_id, &new->dst_addr.v4.sin_addr.s_addr);
+					list_add(&new->relation_list, &domain->relations);
+				} else
+					printk("Inserting New Relation failed - no route to contact address: %pI4\n", &node->contact_addr.v4.sin_addr.s_addr);
 			}
 		}
 	}
@@ -1023,10 +1065,11 @@ int raft_relations_del_node(struct raft_node *node)
 	return 0;
 }
 
-int raft_relations_change_node(struct raft_node *node, union raft_addr *new_addr, int local)
+int raft_relations_change_node(struct net *net, struct raft_node *node, union raft_addr *new_addr, int local)
 {
 	struct raft_domain *domain;
 	struct raft_relation *relation, *r_safe;
+	__be32 srcip;
 
 	if (!node)
 		return -EINVAL;
@@ -1041,12 +1084,27 @@ int raft_relations_change_node(struct raft_node *node, union raft_addr *new_addr
 		/* just reset state of the relation and change node's contact_addr */
 		printk("Go through all domain relations\n");
 		list_for_each_entry_safe(relation, r_safe, &domain->relations, relation_list) {
-			if (
-				(relation->local_node == node) ||
-				(relation->peer_node == node)
-			) {
-				printk("Reseting Relation state: Local Node ID %u, Peer Node ID %u\n", relation->local_node->node_id, relation->peer_node->node_id);
+			if (relation->local_node == node) {
+				relation->src_addr.v4.sin_family = new_addr->v4.sin_family;
+				relation->src_addr.v4.sin_port = new_addr->v4.sin_port;
+				relation->src_addr.v4.sin_addr.s_addr = new_addr->v4.sin_addr.s_addr;
+				printk("Reseting Relation: Local Node ID %u@%pI4, Peer Node ID %u@%pI4\n", relation->local_node->node_id, &relation->src_addr.v4.sin_addr.s_addr, relation->peer_node->node_id, &relation->dst_addr.v4.sin_addr.s_addr);
 				relation->relation_state = RAFT_REL_ST_UNSPEC;
+			} else if (relation->peer_node == node) {
+				srcip = raft_get_source_addr(net, new_addr->v4.sin_addr.s_addr, node->local);
+				if (srcip != 0) {
+					relation->src_addr.v4.sin_addr.s_addr = srcip;
+					relation->dst_addr.v4.sin_family = new_addr->v4.sin_family;
+					relation->dst_addr.v4.sin_port = new_addr->v4.sin_port;
+					relation->dst_addr.v4.sin_addr.s_addr = new_addr->v4.sin_addr.s_addr;
+					printk("Reseting Relation: Local Node ID %u@%pI4, Peer Node ID %u@%pI4\n", relation->local_node->node_id, &relation->src_addr.v4.sin_addr.s_addr, relation->peer_node->node_id, &relation->dst_addr.v4.sin_addr.s_addr);
+					relation->relation_state = RAFT_REL_ST_UNSPEC;
+				} else {
+					printk("Reseting Relation failed - no route to contact address: %pI4\n", &node->contact_addr.v4.sin_addr.s_addr);
+					printk("Deleting Relation: Local Node ID %u, Peer Node ID %u\n", relation->local_node->node_id, relation->peer_node->node_id);
+					list_del(&relation->relation_list);
+					kfree(relation);
+				}
 			}
 			node->contact_addr.v4.sin_family = new_addr->v4.sin_family;
 			node->contact_addr.v4.sin_port = new_addr->v4.sin_port;
@@ -1065,7 +1123,7 @@ int raft_relations_change_node(struct raft_node *node, union raft_addr *new_addr
 		node->local = local;
 
 		printk("create changed relations\n");
-		return raft_relations_add_node(node);
+		return raft_relations_add_node(net, node);
 	}
 
 	return 0;
@@ -1141,7 +1199,7 @@ int raft_nl_node_add(struct sk_buff *skb, struct genl_info *info)
 	new->local = raft_check_locals(net, &new->contact_addr);
 
 	printk("create new relations\n");
-	return raft_relations_add_node(new);
+	return raft_relations_add_node(net, new);
 
 input_error:
 	printk("Error parsing attributes!\n");
@@ -1394,7 +1452,7 @@ int raft_nl_node_set(struct sk_buff *skb, struct genl_info *info)
 			local = raft_check_locals(net, &contact_addr);
 
 			printk("change relations\n");
-			return raft_relations_change_node(node, &contact_addr, local);
+			return raft_relations_change_node(net, node, &contact_addr, local);
 		}
 	}
 
