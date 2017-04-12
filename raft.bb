@@ -15,11 +15,13 @@ inherit module
 # file://*\
 #"
 SRC_URI = "\
+ file://raft.h\
  file://init.c\
  file://conf.c\
+ file://relations.h\
+ file://relations.c\
  file://socket.c\
  file://netlink.c\
- file://raft.h\
  file://structs.h\
  file://netlink.h\
  file://raft_netlink.h\

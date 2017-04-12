@@ -16,6 +16,7 @@
 #include <linux/init.h>
 #include <linux/netdevice.h>
 #include <linux/inetdevice.h>
+#include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/bootmem.h>
 #include <linux/highmem.h>
@@ -677,6 +678,70 @@ static int __net_init raft_init_net(struct net *net)
 	return 0;
 }
 
+#ifdef CONFIG_PROC_FS
+static int __net_init raft_proc_init_net(struct net *net)
+{
+	struct raft_net *rnet = raft_net(net);
+
+	if (!rnet)
+		goto error;
+
+	rnet->proc_net_raft = proc_net_mkdir(net, "raft", net->proc_net);
+	if (!rnet->proc_net_raft)
+		goto out_of_memory;
+
+	if (raft_config_proc_init(net))
+		goto out_proc_net_raft;
+
+	if (raft_relations_proc_init(net))
+		goto out_config_proc_init;
+
+	return 0;
+
+out_config_proc_init:
+	raft_config_proc_exit(net);
+out_proc_net_raft:
+	remove_proc_entry("raft", net->proc_net);
+	rnet->proc_net_raft = NULL;
+out_of_memory:
+	return -ENOMEM;
+error:
+	return -EINVAL;
+}
+
+static void __net_exit raft_proc_exit_net(struct net *net)
+{
+	raft_relations_proc_exit(net);
+	raft_config_proc_exit(net);
+}
+
+static struct pernet_operations raft_proc_net_ops = {
+	.init = raft_proc_init_net,
+	.exit = raft_proc_exit_net,
+};
+
+int __init raft_proc_init(void)
+{
+	return register_pernet_subsys(&raft_proc_net_ops);
+}
+//EXPORT_SYMBOL(raft_proc_init);
+
+void raft_proc_exit(void)
+{
+	unregister_pernet_subsys(&raft_proc_net_ops);
+}
+//EXPORT_SYMBOL(raft_proc_exit);
+#else /* CONFIG_PROC_FS */
+int __init raft_proc_init(void)
+{
+	return 0;
+}
+
+void raft_proc_exit(void)
+{
+	return;
+}
+#endif /* CONFIG_PROC_FS */
 static void __net_exit raft_exit_net(struct net *net)
 {
 	/* Free the local address list */

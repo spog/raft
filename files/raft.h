@@ -190,6 +190,12 @@ void raft_proc_unregister(struct net *net, struct raft_seq_afinfo *afinfo);
 
 int raft_proc_init(void);
 void raft_proc_exit(void);
+
+int __net_init raft_config_proc_init(struct net *net);
+void raft_config_proc_exit(struct net *net);
+
+int __net_init raft_relations_proc_init(struct net *net);
+void raft_relations_proc_exit(struct net *net);
 #endif
 
 static inline u32 raft_hashfn(const struct net *net, u32 num, u32 mask)

@@ -1,5 +1,5 @@
 obj-m += raft.o
-raft-y := init.o conf.o socket.o netlink.o
+raft-y := init.o conf.o relations.o socket.o netlink.o
 
 SRC := $(shell pwd)
 
