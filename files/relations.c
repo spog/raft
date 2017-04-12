@@ -232,39 +232,27 @@ int raft_relations_change_node(struct net *net, struct raft_node *node, union ra
 /* Display raft relations (/proc/net/raft/relations). */
 static int raft_relations_seq_show(struct seq_file *seq, void *v)
 {
-#if 0
 	struct raft_net *rnet = seq->private;
 	struct raft_cluster *cluster;
 	struct raft_cluster *c_safe;
-#endif
 
-	seq_printf(seq, "raft_relations_seq_show: rnet_static_ptr = %p\n", rnet_static_ptr);
+//	seq_printf(seq, "raft_relations_seq_show: rnet = %p\n", rnet);
 
-#if 0
 	list_for_each_entry_safe(cluster, c_safe, &rnet->clusters, cluster_list) {
 		struct raft_domain *domain;
 		struct raft_domain *d_safe;
 
 		seq_printf(seq,                 "cluster %u:\n", cluster->cluster_id);
 		list_for_each_entry_safe(domain, d_safe, &cluster->domains, domain_list) {
-			struct raft_node *node;
-			struct raft_node *n_safe;
+			struct raft_relation *relation;
+			struct raft_relation *r_safe;
 
 			seq_printf(seq,         "    domain %u:\n", domain->domain_id);
-			seq_printf(seq,         "        heartbeat %u\n", domain->heartbeat);
-			seq_printf(seq,         "        election %u\n", domain->election);
-			seq_printf(seq,         "        maxnodes %u\n", domain->maxnodes);
-//			seq_printf(seq,         "        clusterid %u\n", domain->cluster->cluster_id);
-			list_for_each_entry_safe(node, n_safe, &domain->nodes, node_list) {
-				seq_printf(seq, "        node %u:\n", node->node_id);
-				seq_printf(seq, "            contact %pI4\n", &node->contact_addr.v4.sin_addr.s_addr);
-				seq_printf(seq, "            local %d\n", node->local);
-//				seq_printf(seq, "            domainid %u\n", node->domain->domain_id);
-//				seq_printf(seq, "            clusterid %u\n", node->domain->cluster->cluster_id);
+			list_for_each_entry_safe(relation, r_safe, &domain->relations, relation_list) {
+				seq_printf(seq, "        local %u@%pI4, peer %u@%pI4\n", relation->local_node->node_id, &relation->src_addr.v4.sin_addr.s_addr, relation->peer_node->node_id, &relation->dst_addr.v4.sin_addr.s_addr);
 			}
 		}
 	}
-#endif
 
 	return 0;
 }
